@@ -15,7 +15,8 @@ hp:
     lr: 0.02
     momentum: 0.9
     weight_decay: 0.0001
-  grad_clip_norm_value: 35
+
+  grad_clip_norm_value: 100
   batch_size: 2
   model_config:
     min_size: 800

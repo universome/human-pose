@@ -1,5 +1,6 @@
 import os
 from typing import List
+from copy import deepcopy
 
 import torch
 from pycocotools.coco import COCO
@@ -42,6 +43,9 @@ class CocoDetection(VisionDataset):
         img_id = self.ids[index]
         ann_ids = coco.getAnnIds(imgIds=img_id)
         target = coco.loadAnns(ann_ids)
+
+        # To prevent memory leaks when extending annotations
+        target = deepcopy(target)
 
         if self.should_add_masks:
             for obj in target:
