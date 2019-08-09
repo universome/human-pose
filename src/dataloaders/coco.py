@@ -37,7 +37,6 @@ class CocoDetection(VisionDataset):
 
         return valid_idx
 
-
     def __getitem__(self, index):
         coco = self.coco
         img_id = self.ids[index]
@@ -50,7 +49,7 @@ class CocoDetection(VisionDataset):
         if self.should_add_masks:
             for obj in target:
                 obj['mask'] = self.coco.annToMask(obj)
-
+                
         path = coco.loadImgs(img_id)[0]['file_name']
 
         img = Image.open(os.path.join(self.root, path)).convert('RGB')

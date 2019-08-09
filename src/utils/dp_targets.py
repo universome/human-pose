@@ -9,9 +9,10 @@ from pycocotools import mask as mask_utils
 from src.structures.bbox import Bbox
 
 
-def create_target_for_dp(coco_ann: List,
+def create_target_for_dp(coco_ann: Dict,
+                         gt_bbox: Bbox,
                          proposal: Bbox,
-                         model_output_size: int):
+                         dp_head_output_size: int):
     """
     This function takes a raw coco annotation and prepares target, which is then
     passed into the model to compute the loss. It is not a trivial function, because
@@ -21,9 +22,11 @@ def create_target_for_dp(coco_ann: List,
 
     Arguments:
         - coco_ann — raw coco annotation with the following required fields:
-            dp_x, dp_y, dp_I, dp_U, dp_V, dp_masks — these are all densepose annotatoins
+                dp_x, dp_y, dp_I, dp_U, dp_V, dp_masks — these are all densepose annotatoins
+        - gt_bbox — ground truth bounding box. We can't extract it from coco_ann,
+                because MaskRCNN resized it (via GeneralizedRCNNTransform)
         - proposal — box proposals for an image (produced by detection head)
-        - model_output_size — what is the output size of the model (usually it is 56x56)
+        - dp_head_output_size — what is the output size of the model (usually it is 56x56)
 
     Output:
         - points_idx:List[List[int]] — indices showing what points are labeled in the bbox (~100-150 per bbox)
@@ -38,7 +41,6 @@ def create_target_for_dp(coco_ann: List,
     # Since densepose annotations are computed for gt bbox (rescaled to 256x256)
     # we should take the intersection between gt bbox and proposal bbox
     # and leave only the pixels which lie in this intersection
-    gt_bbox = Bbox.from_coco_ann(coco_ann)
 
     # Compute coordinates in the coordinate system where (0,0) is the whole image left upper corner
     img_dp_x = gt_bbox.x + np.array(coco_ann['dp_x']) / 256 * gt_bbox.width
@@ -62,8 +64,8 @@ def create_target_for_dp(coco_ann: List,
 
     # We should to rescale the pixels in such a way
     # that it fits to model output size
-    proposal_dp_x = proposal_dp_x / proposal.width * (model_output_size - 1)
-    proposal_dp_y = proposal_dp_y / proposal.height * (model_output_size - 1)
+    proposal_dp_x = proposal_dp_x / proposal.width * (dp_head_output_size - 1)
+    proposal_dp_y = proposal_dp_y / proposal.height * (dp_head_output_size - 1)
 
     # Since proposal_dp_x and proposal_dp_y are fractional
     # We should convert them to integers to be able to select points on mask
@@ -74,9 +76,9 @@ def create_target_for_dp(coco_ann: List,
     proposal_dp_y = np.round(proposal_dp_y).astype(int)
 
     assert proposal_dp_x.min() >= 0
-    assert proposal_dp_x.max() < model_output_size
+    assert proposal_dp_x.max() < dp_head_output_size
     assert proposal_dp_y.min() >= 0
-    assert proposal_dp_y.max() < model_output_size
+    assert proposal_dp_y.max() < dp_head_output_size
 
     return {
         'dp_U': dp_U,
@@ -84,11 +86,11 @@ def create_target_for_dp(coco_ann: List,
         'dp_I': dp_I,
         'dp_x': proposal_dp_x,
         'dp_y': proposal_dp_y,
-        'dp_masks': extract_dp_masks_from_coco_ann(coco_ann, model_output_size),
+        'dp_masks': extract_dp_masks_from_coco_ann(coco_ann, dp_head_output_size),
     }
 
 
-def compute_dp_uv_loss(dp_targets: Dict, uv_preds: torch.FloatTensor):
+def compute_dp_uv_loss(uv_preds: torch.FloatTensor, dp_targets: Dict):
     """
     Computes loss for densepose
 
@@ -102,12 +104,12 @@ def compute_dp_uv_loss(dp_targets: Dict, uv_preds: torch.FloatTensor):
     """
     assert all(dp_targets['dp_I'] >= 1) # dp_I of 0 is background
 
-    u_preds = uv_preds[dp_targets['dp_y'], dp_targets['dp_x'], dp_targets['dp_I'] - 1]
-    v_preds = uv_preds[dp_targets['dp_y'], dp_targets['dp_x'], dp_targets['dp_I'] + 24 - 1]
+    u_preds = uv_preds[dp_targets['dp_I'] - 1, dp_targets['dp_y'], dp_targets['dp_x']]
+    v_preds = uv_preds[dp_targets['dp_I'] + 24 - 1, dp_targets['dp_y'], dp_targets['dp_x']]
 
     # TODO: compute and return loss for each label separately for visualizaiton purposes
-    u_loss = (u_preds - torch.tensor(dp_targets['dp_U']).float()).pow(2).mean()
-    v_loss = (v_preds - torch.tensor(dp_targets['dp_V']).float()).pow(2).mean()
+    u_loss = (u_preds - torch.tensor(dp_targets['dp_U']).float().to(u_preds.device)).pow(2).mean()
+    v_loss = (v_preds - torch.tensor(dp_targets['dp_V']).float().to(v_preds.device)).pow(2).mean()
 
     return u_loss, v_loss
 
@@ -124,27 +126,27 @@ def compute_dp_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
 
     bg_loss = compute_dp_bg_cls_loss(cls_logits, dp_targets)
     fg_loss = F.cross_entropy(
-        cls_logits[dp_targets['dp_x'], dp_targets['dp_y']],
-        torch.LongTensor(dp_targets['dp_I'], device=cls_logits.device))
+        cls_logits.permute(1, 2, 0)[dp_targets['dp_x'], dp_targets['dp_y']],
+        torch.LongTensor(dp_targets['dp_I']).to(cls_logits.device))
 
     return bg_loss, fg_loss
 
 
 def compute_dp_bg_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
-    bg_mask = torch.ByteTensor(create_bg_mask_from_dp_masks(dp_targets['dp_masks']), device=cls_logits.device)
-    bg_logits = cls_logits[bg_mask, :]
+    bg_mask = torch.ByteTensor(create_bg_mask_from_dp_masks(dp_targets['dp_masks'])).to(cls_logits.device)
+    bg_logits = cls_logits.permute(1, 2, 0)[bg_mask]
 
     assert bg_logits.size() == (bg_mask.sum(), 25), f"Wrong bg_logits shape: {bg_logits.size()}"
 
-    return F.cross_entropy(bg_logits, torch.zeros(bg_mask.sum(), device=bg_logits.device).long())
+    return F.cross_entropy(bg_logits, torch.zeros(bg_mask.sum()).long().to(bg_logits.device))
 
 
-def extract_dp_masks_from_coco_ann(coco_ann, model_output_size: int) -> List[np.array]:
+def extract_dp_masks_from_coco_ann(coco_ann, dp_head_output_size: int) -> List[np.array]:
     """
     Returns binary masks for each body part
     """
     masks = [mask_utils.decode(m) if isinstance(m, dict) else np.zeros((256, 256)) for m in coco_ann['dp_masks']]
-    masks = [downsample_mask(m, model_output_size) for m in masks]
+    masks = [downsample_mask(m, dp_head_output_size) for m in masks]
 
     return np.array(masks)
 

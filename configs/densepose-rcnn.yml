@@ -1,0 +1,27 @@
+title: "Trying to train DensePoseRCNN"
+trainer: "DensePoseRCNNTrainer"
+random_seed: 42
+data:
+  coco_dir: "/home/skorokhodov/densepose/coco"
+  annotations_dir: "/home/skorokhodov/human-pose/data/densepose"
+available_gpus: [8]
+modules:
+  models: ["model"]
+  optims: ["optim"]
+
+checkpoint:
+  freq_iters: 1000
+
+hp:
+  dp_head_output_size: 50
+
+  optim:
+    lr: 0.02
+    momentum: 0.9
+    weight_decay: 0.0001
+
+  grad_clip_norm_value: 100
+  batch_size: 2
+  model_config:
+    min_size: 800
+    max_size: 1333
