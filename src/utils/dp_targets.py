@@ -108,8 +108,8 @@ def compute_dp_uv_loss(uv_preds: torch.FloatTensor, dp_targets: Dict):
     v_preds = uv_preds[dp_targets['dp_I'] + 24 - 1, dp_targets['dp_y'], dp_targets['dp_x']]
 
     # TODO: compute and return loss for each label separately for visualizaiton purposes
-    u_loss = (u_preds - torch.tensor(dp_targets['dp_U']).float().to(u_preds.device)).pow(2).mean()
-    v_loss = (v_preds - torch.tensor(dp_targets['dp_V']).float().to(v_preds.device)).pow(2).mean()
+    u_loss = (u_preds - torch.tensor(dp_targets['dp_U']).float().to(u_preds.device)).abs().mean()
+    v_loss = (v_preds - torch.tensor(dp_targets['dp_V']).float().to(v_preds.device)).abs().mean()
 
     return u_loss, v_loss
 
