@@ -69,12 +69,16 @@ class DensePoseRCNN(MaskRCNN):
             DensePoseRoIHeads.forward(self.roi_heads, *args, **kwargs)
         self.roi_heads.run_densepose_head_during_training = lambda *args, **kwargs: \
             DensePoseRoIHeads.run_densepose_head_during_training(self.roi_heads, *args, **kwargs)
+        self.roi_heads.run_densepose_head_during_eval = lambda *args, **kwargs: \
+            DensePoseRoIHeads.run_densepose_head_during_eval(self.roi_heads, *args, **kwargs)
 
         self.roi_heads.densepose_roi_pool = MultiScaleRoIAlign(
             featmap_names=[0, 1, 2, 3],
             output_size=14,
             sampling_ratio=2)
         self.roi_heads.densepose_head = MaskRCNNHeads(backbone.out_channels, (256, 256, 256, 256), 1)
+
+        # TODO: maybe we should put sigmoid on top (UV coords are always in [0,1] range)
         self.roi_heads.densepose_uv_predictor = nn.Sequential(
             misc_nn_ops.ConvTranspose2d(256, 256, kernel_size=2, stride=2),
             nn.ReLU(inplace=True),

@@ -1,13 +1,13 @@
+from typing import List, Tuple
+
 import torch
 import torch.nn.functional as F
 from torchvision.models.detection.roi_heads import (
     RoIHeads,
     fastrcnn_loss,
     maskrcnn_loss,
-    maskrcnn_inference,
-    keypointrcnn_loss,
-    keypointrcnn_inference,
-    project_masks_on_boxes)
+    maskrcnn_inference)
+import numpy as np
 
 from src.utils.dp_targets import  create_target_for_dp, compute_dp_cls_loss, compute_dp_uv_loss
 from src.structures.bbox import Bbox
@@ -99,7 +99,13 @@ class DensePoseRoIHeads(RoIHeads):
             )
             losses.update(dp_losses)
         else:
-            raise NotImplementedError
+            dp_proposals = [p["boxes"] for p in result]
+            dp_classes, dp_u_coords, dp_v_coords = self.run_densepose_head_during_eval(features, image_shapes, dp_proposals)
+
+            for cls_idx, v_coords, u_coords, r in zip(dp_classes, dp_u_coords, dp_v_coords, result):
+                r["dp_u_coords"] = u_coords
+                r["dp_v_coords"] = v_coords
+                r["dp_classes"] = cls_idx
 
         return result, losses
 
@@ -158,8 +164,38 @@ class DensePoseRoIHeads(RoIHeads):
             'dp_v_loss': dp_v_loss
         }
 
-    def run_densepose_head_during_eval(self):
-        raise NotImplementedError
+    def run_densepose_head_during_eval(self, features, image_shapes, dp_proposals):
+        # TODO: not sure if features will always have a zero layer property...
+        if len(dp_proposals) == 1 and dp_proposals[0].numel() == 0:
+            dp_classes = [torch.empty(0, 1, 1)]
+            dp_u_coords = [torch.empty(0, 1, 1)]
+            dp_v_coords = [torch.empty(0, 1, 1)]
+
+            return dp_classes, dp_u_coords, dp_v_coords
+
+        dp_features = self.densepose_roi_pool(features, dp_proposals, image_shapes)
+        dp_features = self.densepose_head(dp_features)
+        dp_cls_logits = self.densepose_class_predictor(dp_features)
+        dp_uv_coords = self.densepose_uv_predictor(dp_features)
+
+        dp_proposals_flat = [p for ps in dp_proposals for p in ps]
+        bboxes = [Bbox.from_torch_tensor(p).discretize() for p in dp_proposals_flat]
+        target_sizes = [(bb.width, bb.height) for bb in bboxes]
+        dp_cls_logits = [F.interpolate(x.unsqueeze(0), size=s, mode='bilinear').squeeze(0) \
+                            for x, s in zip(dp_cls_logits, target_sizes)]
+        dp_uv_coords = [F.interpolate(x.unsqueeze(0), size=s, mode='bilinear').squeeze(0) \
+                            for x, s in zip(dp_uv_coords, target_sizes)]
+
+        results = [extract_dp_predictions(l.unsqueeze(0), uv.unsqueeze(0), [[p]], [s]) \
+                       for l, uv, p, s in zip(dp_cls_logits, dp_uv_coords, dp_proposals_flat, target_sizes)]
+        dp_classes, dp_u_coords, dp_v_coords = zip(*results)
+
+        num_boxes_per_image = [len(ps) for ps in dp_proposals]
+        dp_classes = np.split([x[0].squeeze(0) for x in dp_classes], num_boxes_per_image)
+        dp_u_coords = np.split([x[0].squeeze(0) for x in dp_u_coords], num_boxes_per_image)
+        dp_v_coords = np.split([x[0].squeeze(0) for x in dp_v_coords], num_boxes_per_image)
+
+        return dp_classes, dp_u_coords, dp_v_coords
 
 
 def get_positive_proposals(proposals, labels, matched_idxs):
@@ -176,29 +212,60 @@ def get_positive_proposals(proposals, labels, matched_idxs):
     return positive_proposals, pos_matched_idxs
 
 
-def compute_ious(proposals, matched_idxs, targets):
-    pass
+def extract_dp_predictions(dp_cls_logits, dp_uv_coords, dp_proposals, target_sizes):
+    # TODO: We can try and parallelize the computation by first padding to largest value
+    #       then stacking and computing for all. But this does not work because of OOM.
+    #       So, we should sort by size and split into batches.
+    # dp_cls_logits = pad_to_largest(dp_cls_logits)
+    # dp_uv_coords = pad_to_largest(dp_uv_coords)
+
+    # Convert to N x W x H x C for convenience
+    dp_cls_logits = dp_cls_logits.permute(0, 2, 3, 1)
+    dp_uv_coords = dp_uv_coords.permute(0, 2, 3, 1)
+
+    # Leaving only the most confident body part
+    dp_classes = dp_cls_logits.argmax(dim=3, keepdim=True)
+    idx = torch.arange(dp_cls_logits.size(3)).view(1, 1, 1, -1).repeat(*dp_cls_logits.shape[:3], 1)
+    max_cls_mask = idx.to(dp_classes.device) == dp_classes
+    dp_classes = dp_classes.squeeze(3)
+
+    # Extract UV-coords
+    dp_u_coords, dp_v_coords = dp_uv_coords[:, :, :, :24], dp_uv_coords[:, :, :, 24:]
+
+    # Add dummy background predictions so we can use masked_select later (make the same dimensionality as dp_classes)
+    bg_dummy_coords = torch.zeros(*dp_u_coords.shape[:3], 1).to(dp_u_coords.device)
+    dp_u_coords = torch.cat([bg_dummy_coords, dp_u_coords], dim=3)
+    dp_v_coords = torch.cat([bg_dummy_coords, dp_v_coords], dim=3)
+
+    # Select coordinates for the most confident class
+    # TODO: if there will be two max classes with the same value, this will fail,
+    #       because we'll have more values than possible for view
+    #       and this can really happen in low precision I suppose
+    dp_u_coords = dp_u_coords.masked_select(max_cls_mask).view(dp_u_coords.shape[:3])
+    dp_v_coords = dp_v_coords.masked_select(max_cls_mask).view(dp_v_coords.shape[:3])
+
+    num_boxes_per_image = [len(ps) for ps in dp_proposals]
+    dp_classes = dp_classes.split(num_boxes_per_image, dim=0)
+    dp_u_coords = dp_u_coords.split(num_boxes_per_image, dim=0)
+    dp_v_coords = dp_v_coords.split(num_boxes_per_image, dim=0)
+
+    # target_sizes = torch.tensor(target_sizes).split(num_boxes_per_image, dim=0)
+    # dp_classes = [[x[:s[0], :s[1]] for x, s in zip(xs, ss)] for xs, ss in zip(dp_classes, target_sizes)]
+    # dp_u_coords = [[x[:s[0], :s[1]] for x, s in zip(xs, ss)] for xs, ss in zip(dp_u_coords, target_sizes)]
+    # dp_v_coords = [[x[:s[0], :s[1]] for x, s in zip(xs, ss)] for xs, ss in zip(dp_v_coords, target_sizes)]
+
+    return dp_classes, dp_u_coords, dp_v_coords
 
 
-def bb_intersection_over_union(boxA, boxB):
-    # determine the (x, y)-coordinates of the intersection rectangle
-    xA = max(boxA[0], boxB[0])
-    yA = max(boxA[1], boxB[1])
-    xB = min(boxA[2], boxB[2])
-    yB = min(boxA[3], boxB[3])
+def pad_to_largest(xs: List[torch.Tensor], pad_val:float=-10000) -> torch.Tensor:
+    """
+        Pads to largest width and height and returns stacked tensor
+        Assumes that each tensor in the list is in C x W x H format
+    """
+    max_w = max([x.size(1) for x in xs])
+    max_h = max([x.size(2) for x in xs])
+    pad_sizes = [(0, max_w - x.size(1), 0, max_h - x.size(2)) for x in xs]
+    padded = [F.pad(x, pad=p, mode='constant', value=pad_val) for p, x in zip(pad_sizes, xs)]
 
-    # compute the area of intersection rectangle
-    interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+    return torch.stack(padded)
 
-    # compute the area of both the prediction and ground-truth
-    # rectangles
-    boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
-    boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
-
-    # compute the intersection over union by taking the intersection
-    # area and dividing it by the sum of prediction + ground-truth
-    # areas - the interesection area
-    iou = interArea / float(boxAArea + boxBArea - interArea)
-
-    # return the intersection over union value
-    return iou
