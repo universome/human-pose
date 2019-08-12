@@ -100,12 +100,11 @@ class DensePoseRoIHeads(RoIHeads):
             losses.update(dp_losses)
         else:
             dp_proposals = [p["boxes"] for p in result]
-            dp_classes, dp_u_coords, dp_v_coords = self.run_densepose_head_during_eval(features, image_shapes, dp_proposals)
+            dp_cls_logits, dp_uv_coords = self.run_densepose_head_during_eval(features, image_shapes, dp_proposals)
 
-            for cls_idx, v_coords, u_coords, r in zip(dp_classes, dp_u_coords, dp_v_coords, result):
-                r["dp_u_coords"] = u_coords
-                r["dp_v_coords"] = v_coords
-                r["dp_classes"] = cls_idx
+            for cls_logits, uv_coords, r in zip(dp_cls_logits, dp_uv_coords, result):
+                r["dp_cls_logits"] = cls_logits
+                r["dp_uv_coords"] = uv_coords
 
         return result, losses
 
@@ -167,35 +166,21 @@ class DensePoseRoIHeads(RoIHeads):
     def run_densepose_head_during_eval(self, features, image_shapes, dp_proposals):
         # TODO: not sure if features will always have a zero layer property...
         if len(dp_proposals) == 1 and dp_proposals[0].numel() == 0:
-            dp_classes = [torch.empty(0, 1, 1)]
-            dp_u_coords = [torch.empty(0, 1, 1)]
-            dp_v_coords = [torch.empty(0, 1, 1)]
+            dp_cls_logits = [torch.empty(0, 1, 1)]
+            dp_uv_coords = [torch.empty(0, 1, 1)]
 
-            return dp_classes, dp_u_coords, dp_v_coords
+            return dp_cls_logits, dp_uv_coords
 
         dp_features = self.densepose_roi_pool(features, dp_proposals, image_shapes)
         dp_features = self.densepose_head(dp_features)
         dp_cls_logits = self.densepose_class_predictor(dp_features)
         dp_uv_coords = self.densepose_uv_predictor(dp_features)
 
-        dp_proposals_flat = [p for ps in dp_proposals for p in ps]
-        bboxes = [Bbox.from_torch_tensor(p).discretize() for p in dp_proposals_flat]
-        target_sizes = [(bb.width, bb.height) for bb in bboxes]
-        dp_cls_logits = [F.interpolate(x.unsqueeze(0), size=s, mode='bilinear').squeeze(0) \
-                            for x, s in zip(dp_cls_logits, target_sizes)]
-        dp_uv_coords = [F.interpolate(x.unsqueeze(0), size=s, mode='bilinear').squeeze(0) \
-                            for x, s in zip(dp_uv_coords, target_sizes)]
-
-        results = [extract_dp_predictions(l.unsqueeze(0), uv.unsqueeze(0), [[p]], [s]) \
-                       for l, uv, p, s in zip(dp_cls_logits, dp_uv_coords, dp_proposals_flat, target_sizes)]
-        dp_classes, dp_u_coords, dp_v_coords = zip(*results)
-
         num_boxes_per_image = [len(ps) for ps in dp_proposals]
-        dp_classes = np.split([x[0].squeeze(0) for x in dp_classes], num_boxes_per_image)
-        dp_u_coords = np.split([x[0].squeeze(0) for x in dp_u_coords], num_boxes_per_image)
-        dp_v_coords = np.split([x[0].squeeze(0) for x in dp_v_coords], num_boxes_per_image)
+        dp_cls_logits = dp_cls_logits.split(num_boxes_per_image)
+        dp_uv_coords = dp_uv_coords.split(num_boxes_per_image)
 
-        return dp_classes, dp_u_coords, dp_v_coords
+        return dp_cls_logits, dp_uv_coords
 
 
 def get_positive_proposals(proposals, labels, matched_idxs):
@@ -210,51 +195,6 @@ def get_positive_proposals(proposals, labels, matched_idxs):
         pos_matched_idxs.append(matched_idxs[img_id][pos])
 
     return positive_proposals, pos_matched_idxs
-
-
-def extract_dp_predictions(dp_cls_logits, dp_uv_coords, dp_proposals, target_sizes):
-    # TODO: We can try and parallelize the computation by first padding to largest value
-    #       then stacking and computing for all. But this does not work because of OOM.
-    #       So, we should sort by size and split into batches.
-    # dp_cls_logits = pad_to_largest(dp_cls_logits)
-    # dp_uv_coords = pad_to_largest(dp_uv_coords)
-
-    # Convert to N x W x H x C for convenience
-    dp_cls_logits = dp_cls_logits.permute(0, 2, 3, 1)
-    dp_uv_coords = dp_uv_coords.permute(0, 2, 3, 1)
-
-    # Leaving only the most confident body part
-    dp_classes = dp_cls_logits.argmax(dim=3, keepdim=True)
-    idx = torch.arange(dp_cls_logits.size(3)).view(1, 1, 1, -1).repeat(*dp_cls_logits.shape[:3], 1)
-    max_cls_mask = idx.to(dp_classes.device) == dp_classes
-    dp_classes = dp_classes.squeeze(3)
-
-    # Extract UV-coords
-    dp_u_coords, dp_v_coords = dp_uv_coords[:, :, :, :24], dp_uv_coords[:, :, :, 24:]
-
-    # Add dummy background predictions so we can use masked_select later (make the same dimensionality as dp_classes)
-    bg_dummy_coords = torch.zeros(*dp_u_coords.shape[:3], 1).to(dp_u_coords.device)
-    dp_u_coords = torch.cat([bg_dummy_coords, dp_u_coords], dim=3)
-    dp_v_coords = torch.cat([bg_dummy_coords, dp_v_coords], dim=3)
-
-    # Select coordinates for the most confident class
-    # TODO: if there will be two max classes with the same value, this will fail,
-    #       because we'll have more values than possible for view
-    #       and this can really happen in low precision I suppose
-    dp_u_coords = dp_u_coords.masked_select(max_cls_mask).view(dp_u_coords.shape[:3])
-    dp_v_coords = dp_v_coords.masked_select(max_cls_mask).view(dp_v_coords.shape[:3])
-
-    num_boxes_per_image = [len(ps) for ps in dp_proposals]
-    dp_classes = dp_classes.split(num_boxes_per_image, dim=0)
-    dp_u_coords = dp_u_coords.split(num_boxes_per_image, dim=0)
-    dp_v_coords = dp_v_coords.split(num_boxes_per_image, dim=0)
-
-    # target_sizes = torch.tensor(target_sizes).split(num_boxes_per_image, dim=0)
-    # dp_classes = [[x[:s[0], :s[1]] for x, s in zip(xs, ss)] for xs, ss in zip(dp_classes, target_sizes)]
-    # dp_u_coords = [[x[:s[0], :s[1]] for x, s in zip(xs, ss)] for xs, ss in zip(dp_u_coords, target_sizes)]
-    # dp_v_coords = [[x[:s[0], :s[1]] for x, s in zip(xs, ss)] for xs, ss in zip(dp_v_coords, target_sizes)]
-
-    return dp_classes, dp_u_coords, dp_v_coords
 
 
 def pad_to_largest(xs: List[torch.Tensor], pad_val:float=-10000) -> torch.Tensor:
