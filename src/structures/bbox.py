@@ -26,7 +26,7 @@ class Bbox:
         return Bbox(x_min, y_min, x_max - x_min, y_max - y_min)
 
     def discretize(self) -> "Bbox":
-        return Bbox(*map(int, [self.x, self.y, self.width, self.height]))
+        return Bbox(*map(round, [self.x, self.y, self.width, self.height]))
 
     def corners(self) -> Tuple:
         return (self.x, self.y, self.x + self.width, self.y + self.height)
