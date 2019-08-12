@@ -140,10 +140,11 @@ class denseposeCOCOeval:
 
     def _decodeUvData(self, dt):
         from PIL import Image
-        import StringIO
+        import io
+        from base64 import b64decode
         uvData = dt['uv_data']
         uvShape = dt['uv_shape']
-        fStream = StringIO.StringIO(uvData.decode('base64'))
+        fStream = io.BytesIO(b64decode(uvData))
         im = Image.open(fStream)
         data = np.rollaxis(np.array(im.getdata(), dtype=np.uint8), -1, 0)
         dt['uv'] = data.reshape(uvShape)
