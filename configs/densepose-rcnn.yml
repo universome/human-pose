@@ -1,6 +1,6 @@
 random_seed: 42
 data:
-  coco_dir: "data/densepose/coco"
+  coco_dir: "data/coco"
   annotations_dir: "data/densepose"
   eval_data: "data/densepose/eval_data"
 modules:
