@@ -1,10 +1,8 @@
-title: "Trying to train DensePoseRCNN"
-trainer: "DensePoseRCNNTrainer"
 random_seed: 42
 data:
-  coco_dir: "/home/skorokhodov/densepose/coco"
-  annotations_dir: "/home/skorokhodov/human-pose/data/densepose"
-  eval_data: "/home/skorokhodov/human-pose/data/eval_data"
+  coco_dir: "data/densepose/coco"
+  annotations_dir: "data/densepose"
+  eval_data: "data/densepose/eval_data"
 modules:
   models: ["model"]
   optims: ["optim"]

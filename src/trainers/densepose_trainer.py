@@ -58,15 +58,15 @@ class DensePoseRCNNTrainer(BaseTrainer):
                 'coco_anns': target,
             }
 
-        # train_ds = CocoDetection(f'{self.config.coco_data_dir}/coco_train2014',
+        # train_ds = CocoDetection(f'{self.config.coco_data_dir}/train2014',
         #                          f'{self.config.coco_data_dir}/annotations/instances_train2014.json',
         #                          transform=transforms.ToTensor(),
         #                          target_transform=torchvision_target_format)
-        # val_ds = CocoDetection(f'{self.config.coco_data_dir}/coco_val2014',
+        # val_ds = CocoDetection(f'{self.config.coco_data_dir}/val2014',
         #                          f'{self.config.coco_data_dir}/annotations/instances_val2014.json',
         #                          transform=transforms.ToTensor(),
         #                          target_transform=torchvision_target_format)
-        train_ds = CocoDetection(f'{self.config.data.coco_dir}/coco_train2014',
+        train_ds = CocoDetection(f'{self.config.data.coco_dir}/train2014',
                                  f'{self.config.data.annotations_dir}/densepose_coco_2014_tiny.json',
                                  transform=transforms.ToTensor(),
                                  target_transform=torchvision_target_format)
