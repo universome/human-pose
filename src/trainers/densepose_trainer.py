@@ -73,7 +73,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
 
     def init_optimizers(self):
         # TODO: lr scheduling
-        self.optim = torch.optim.Adam(self.model.parameters())
+        self.optim = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         # self.optim = torch.optim.SGD(self.model.parameters(), **self.config.hp.optim.to_dict())
         # self.lr_scheduler = torch.optim.lr_scheduler.CyclicLR(self.optim, 1e-6, 1e-2)
 

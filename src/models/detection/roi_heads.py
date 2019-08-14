@@ -607,11 +607,11 @@ class RoIHeads(torch.nn.Module):
                 'dp_uv_loss': torch.zeros(1, device=dp_cls_logits.device)
             }
 
-        dp_cls_losses = torch.Tensor([compute_dp_cls_loss(cls_logits, dp_trg) for cls_logits, dp_trg in zip(dp_cls_logits, dp_targets)])
-        dp_uv_losses = torch.Tensor([compute_dp_uv_loss(uv_preds, dp_trg) for uv_preds, dp_trg in zip(dp_uv_preds, dp_targets)])
+        dp_cls_bg_losses, dp_cls_fg_losses = zip(*[compute_dp_cls_loss(cls_logits, dp_trg) for cls_logits, dp_trg in zip(dp_cls_logits, dp_targets)])
+        dp_u_losses, dp_v_losses = zip(*[compute_dp_uv_loss(uv_preds, dp_trg) for uv_preds, dp_trg in zip(dp_uv_preds, dp_targets)])
 
-        dp_cls_bg_loss, dp_cls_fg_loss = dp_cls_losses[:, 0].mean(), dp_cls_losses[:, 1].mean()
-        dp_u_loss, dp_v_loss = dp_uv_losses[:, 0].mean(), dp_uv_losses[:, 1].mean()
+        dp_cls_bg_loss, dp_cls_fg_loss = torch.stack(dp_cls_bg_losses).mean(), torch.stack(dp_cls_fg_losses).mean()
+        dp_u_loss, dp_v_loss = torch.stack(dp_u_losses).mean(), torch.stack(dp_v_losses).mean()
 
         return {
             'dp_cls_bg_loss': dp_cls_bg_loss,

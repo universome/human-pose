@@ -87,6 +87,7 @@ class GeneralizedRCNNTransform(nn.Module):
             keypoints = target["keypoints"]
             keypoints = resize_keypoints(keypoints, (h, w), image.shape[-2:])
             target["keypoints"] = keypoints
+
         return image, target
 
     def batch_images(self, images, size_divisible=32):
