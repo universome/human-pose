@@ -133,7 +133,7 @@ def compute_dp_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
 
 
 def compute_dp_bg_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
-    bg_mask = torch.ByteTensor(create_bg_mask_from_dp_masks(dp_targets['dp_masks'])).to(cls_logits.device)
+    bg_mask = torch.Tensor(create_bg_mask_from_dp_masks(dp_targets['dp_masks'])).bool().to(cls_logits.device)
     bg_logits = cls_logits.permute(1, 2, 0)[bg_mask]
 
     assert bg_logits.size() == (bg_mask.sum(), 25), f"Wrong bg_logits shape: {bg_logits.size()}"

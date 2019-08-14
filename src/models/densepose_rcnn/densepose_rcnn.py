@@ -1,10 +1,4 @@
-from collections import OrderedDict
-
-import torch
 from torch import nn
-import torch.nn.functional as F
-import numpy as np
-
 from torchvision.ops import misc as misc_nn_ops
 from torchvision.ops import MultiScaleRoIAlign
 from src.models.detection.mask_rcnn import MaskRCNN, MaskRCNNHeads
@@ -61,7 +55,7 @@ class DensePoseRCNN(MaskRCNN):
             sampling_ratio=2)
         self.roi_heads.densepose_head = MaskRCNNHeads(backbone.out_channels, (256, 256, 256, 256), 1)
 
-        # TODO: maybe we should put sigmoid on top (UV coords are always in [0,1] range)
+        # TODO: maybe we should put sigmoid on top (UV coords are always in [0,1] range)?
         self.roi_heads.densepose_uv_predictor = nn.Sequential(
             misc_nn_ops.ConvTranspose2d(256, 256, kernel_size=2, stride=2),
             nn.ReLU(inplace=True),
