@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torchvision.ops import misc as misc_nn_ops
 from torchvision.ops import MultiScaleRoIAlign
 
-from ..utils import load_state_dict_from_url
+from torchvision.models.utils import load_state_dict_from_url
 
 from .faster_rcnn import FasterRCNN
 from .backbone_utils import resnet_fpn_backbone
