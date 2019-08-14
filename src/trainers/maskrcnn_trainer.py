@@ -6,10 +6,8 @@ from firelab import BaseTrainer
 from torch.utils.data import DataLoader, Subset
 from torch.nn.utils.clip_grad import clip_grad_norm_
 from torchvision import transforms
-from torchvision.models.detection.mask_rcnn import MaskRCNN, maskrcnn_resnet50_fpn
-from torchvision.models import mobilenet_v2
-# from torchvision.datasets import CocoDetection
 
+from src.models.detection.mask_rcnn import MaskRCNN, maskrcnn_resnet50_fpn
 from src.dataloaders.coco import CocoDetection
 
 class MaskRCNNTrainer(BaseTrainer):

@@ -10,11 +10,9 @@ from firelab import BaseTrainer
 from torch.utils.data import DataLoader, Subset
 from torch.nn.utils.clip_grad import clip_grad_norm_
 from torchvision import transforms
-from torchvision.models.detection.mask_rcnn import MaskRCNN, maskrcnn_resnet50_fpn
-from torchvision.models import mobilenet_v2
-from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
 from PIL import Image
 
+from src.models.detection.backbone_utils import resnet_fpn_backbone
 from src.dataloaders.coco import CocoDetection
 from src.models import DensePoseRCNN
 from src.utils.densepose_cocoeval import denseposeCOCOeval
@@ -33,8 +31,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
         backbone = resnet_fpn_backbone('resnet50', pretrained=True)
         # TODO: what is the correct number of classes we should use? Binary (human/bg)?
         self.model = DensePoseRCNN(backbone,
-                                   num_maskrcnn_classes=91,
-                                   dp_head_output_size=self.config.hp.dp_head_output_size)
+                                   num_maskrcnn_classes=2)
         self.model = self.model.to(self.device_name)
 
     def init_dataloaders(self):
