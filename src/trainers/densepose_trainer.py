@@ -31,8 +31,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
         backbone = resnet_fpn_backbone('resnet50', pretrained=True)
         # TODO: what is the correct number of classes we should use? Binary (human/bg)?
         self.model = DensePoseRCNN(backbone,
-                                   num_maskrcnn_classes=91,
-                                   dp_head_output_size=self.config.hp.dp_head_output_size)
+                                   num_maskrcnn_classes=2)
         self.model = self.model.to(self.device_name)
 
     def init_dataloaders(self):

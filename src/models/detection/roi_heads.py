@@ -1,13 +1,22 @@
-import torch
+from typing import List
 
+import torch
 import torch.nn.functional as F
-from torch import nn
 
 from torchvision.ops import boxes as box_ops
 from torchvision.ops import misc as misc_nn_ops
 from torchvision.ops import roi_align
 
+from src.structures.bbox import Bbox
+from src.utils.dp_targets import  create_target_for_dp, compute_dp_cls_loss, compute_dp_uv_loss
 from . import _utils as det_utils
+
+
+# TODO:
+#  We cannot add each head here, this is insane.
+#  Use separate head class for each individual head,
+#  move code for training/inference into them
+#  and combine the in RoIHeads class.
 
 
 def fastrcnn_loss(class_logits, box_regression, labels, regression_targets):
@@ -319,6 +328,33 @@ def paste_masks_in_image(masks, boxes, img_shape, padding=1):
     return res
 
 
+def get_positive_proposals(proposals, labels, matched_idxs):
+    # during training, only focus on positive boxes
+    num_images = len(proposals)
+    positive_proposals = []
+    pos_matched_idxs = []
+
+    for img_id in range(num_images):
+        pos = torch.nonzero(labels[img_id] > 0).squeeze(1)
+        positive_proposals.append(proposals[img_id][pos])
+        pos_matched_idxs.append(matched_idxs[img_id][pos])
+
+    return positive_proposals, pos_matched_idxs
+
+
+def pad_to_largest(xs: List[torch.Tensor], pad_val:float=-10000) -> torch.Tensor:
+    """
+        Pads to largest width and height and returns stacked tensor
+        Assumes that each tensor in the list is in C x W x H format
+    """
+    max_w = max([x.size(1) for x in xs])
+    max_h = max([x.size(2) for x in xs])
+    pad_sizes = [(0, max_w - x.size(1), 0, max_h - x.size(2)) for x in xs]
+    padded = [F.pad(x, pad=p, mode='constant', value=pad_val) for p, x in zip(pad_sizes, xs)]
+
+    return torch.stack(padded)
+
+
 class RoIHeads(torch.nn.Module):
     def __init__(self,
                  box_roi_pool,
@@ -390,6 +426,16 @@ class RoIHeads(torch.nn.Module):
         if self.keypoint_head is None:
             return False
         if self.keypoint_predictor is None:
+            return False
+        return True
+
+    @property
+    def has_densepose(self):
+        if self.densepose_roi_pool is None:
+            return False
+        if self.densepose_uv_predictor is None:
+            return False
+        if self.densepose_class_predictor is None:
             return False
         return True
 
@@ -519,6 +565,80 @@ class RoIHeads(torch.nn.Module):
 
         return all_boxes, all_scores, all_labels
 
+    def run_densepose_head_during_training(self, features, image_shapes, targets,
+                                                 proposals, labels, matched_idxs):
+        # during training, only focus on boxes of foreground class
+        dp_proposals, pos_matched_idxs = get_positive_proposals(proposals, labels, matched_idxs)
+
+        assert len(dp_proposals) == len(pos_matched_idxs)
+        assert all([len(ps) == len(idxs) for ps, idxs in zip(dp_proposals, pos_matched_idxs)])
+
+        dp_features = self.densepose_roi_pool(features, dp_proposals, image_shapes)
+
+        # Flattening out our data
+        coco_anns_flat = [targets[img_i]['coco_anns'][pos_matched_idxs[img_i][p_i]] for img_i, obj_idx in enumerate(pos_matched_idxs) for p_i in range(len(obj_idx))]
+        gt_bboxes_flat = [targets[img_i]['boxes'][pos_matched_idxs[img_i][p_i]] for img_i, obj_idx in enumerate(pos_matched_idxs) for p_i in range(len(obj_idx))]
+        dp_proposals = [p for ps in dp_proposals for p in ps]
+        pos_matched_idxs = [(img_i, bb_i) for img_i, bbox_idxs in enumerate(pos_matched_idxs) for bb_i in bbox_idxs]
+
+        # Filtering out those proposals, which correspond to objects that do not have densepose annotation
+        has_dp = lambda i: 'dp_masks' in coco_anns_flat[i]
+        gt_bboxes_flat = [bb for i, bb in enumerate(gt_bboxes_flat) if has_dp(i)]
+        dp_features = torch.stack([f for i, f in enumerate(dp_features) if has_dp(i)])
+        dp_proposals = [p for i, p in enumerate(dp_proposals) if has_dp(i)]
+        pos_matched_idxs = [idx for i, idx in enumerate(pos_matched_idxs) if has_dp(i)]
+
+        dp_features = self.densepose_head(dp_features)
+        dp_cls_logits = self.densepose_class_predictor(dp_features)
+        dp_uv_preds = self.densepose_uv_predictor(dp_features)
+
+        # Converting to Bbox format
+        dp_proposals = [Bbox.from_torch_tensor(bb) for bb in dp_proposals]
+        gt_bboxes_flat = [Bbox.from_torch_tensor(bb) for bb in gt_bboxes_flat]
+
+        dp_head_output_size = dp_cls_logits.size(-1)
+        dp_targets = [create_target_for_dp(targets[img_idx]['coco_anns'][bbox_idx], gt_bbox, proposal, dp_head_output_size) \
+                        for (img_idx, bbox_idx), gt_bbox, proposal in zip(pos_matched_idxs, gt_bboxes_flat, dp_proposals)]
+
+        if len(dp_targets) == 0:
+            return {
+                'dp_cls_bg_loss': torch.zeros(1, device=dp_cls_logits.device),
+                'dp_cls_fg_loss': torch.zeros(1, device=dp_cls_logits.device),
+                'dp_uv_loss': torch.zeros(1, device=dp_cls_logits.device)
+            }
+
+        dp_cls_losses = torch.Tensor([compute_dp_cls_loss(cls_logits, dp_trg) for cls_logits, dp_trg in zip(dp_cls_logits, dp_targets)])
+        dp_uv_losses = torch.Tensor([compute_dp_uv_loss(uv_preds, dp_trg) for uv_preds, dp_trg in zip(dp_uv_preds, dp_targets)])
+
+        dp_cls_bg_loss, dp_cls_fg_loss = dp_cls_losses[:, 0].mean(), dp_cls_losses[:, 1].mean()
+        dp_u_loss, dp_v_loss = dp_uv_losses[:, 0].mean(), dp_uv_losses[:, 1].mean()
+
+        return {
+            'dp_cls_bg_loss': dp_cls_bg_loss,
+            'dp_cls_fg_loss': dp_cls_fg_loss,
+            'dp_u_loss': dp_u_loss,
+            'dp_v_loss': dp_v_loss
+        }
+
+    def run_densepose_head_during_eval(self, features, image_shapes, dp_proposals):
+        # TODO: not sure if features will always have a zero layer property...
+        if len(dp_proposals) == 1 and dp_proposals[0].numel() == 0:
+            dp_cls_logits = [torch.empty(0, 1, 1)]
+            dp_uv_coords = [torch.empty(0, 1, 1)]
+
+            return dp_cls_logits, dp_uv_coords
+
+        dp_features = self.densepose_roi_pool(features, dp_proposals, image_shapes)
+        dp_features = self.densepose_head(dp_features)
+        dp_cls_logits = self.densepose_class_predictor(dp_features)
+        dp_uv_coords = self.densepose_uv_predictor(dp_features)
+
+        num_boxes_per_image = [len(ps) for ps in dp_proposals]
+        dp_cls_logits = dp_cls_logits.split(num_boxes_per_image)
+        dp_uv_coords = dp_uv_coords.split(num_boxes_per_image)
+
+        return dp_cls_logits, dp_uv_coords
+
     def forward(self, features, proposals, image_shapes, targets=None):
         """
         Arguments:
@@ -620,5 +740,20 @@ class RoIHeads(torch.nn.Module):
                     r["keypoints_scores"] = kps
 
             losses.update(loss_keypoint)
+
+        # Compute DensePose branch
+        if self.training:
+            dp_losses = self.run_densepose_head_during_training(
+                features, image_shapes, targets,
+                proposals, labels, matched_idxs
+            )
+            losses.update(dp_losses)
+        else:
+            dp_proposals = [p["boxes"] for p in result]
+            dp_cls_logits, dp_uv_coords = self.run_densepose_head_during_eval(features, image_shapes, dp_proposals)
+
+            for cls_logits, uv_coords, r in zip(dp_cls_logits, dp_uv_coords, result):
+                r["dp_cls_logits"] = cls_logits
+                r["dp_uv_coords"] = uv_coords
 
         return result, losses
