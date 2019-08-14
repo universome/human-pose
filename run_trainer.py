@@ -1,27 +1,19 @@
-from firelab.manager import run
-from firelab.config import Config
 import sys; sys.path.append('.')
 from src.trainers.maskrcnn_trainer import MaskRCNNTrainer
+from src.trainers.densepose_trainer import DensePoseRCNNTrainer
 from firelab.utils.fs_utils import load_config
 
-args = Config({
-    'config_path': 'configs/densepose-rcnn.yml',
-    'stay_after_training': True,
-    'tb_port': 13001
-})
-# args.tb_port = None
 
-run('start', args)
+def main():
+    config = load_config('configs/densepose-rcnn.yml')
 
-# config = load_config('configs/mask-rcnn.yml')
-# config.set('firelab', {
-#     'device_name': 'cuda:8',
-#     'exp_name': 'debug-mask-rcnn',
-#     'available_gpus': [8],
-#     'checkpoints_path': 'debug/checkpoints',
-#     'logs_path': 'debug/logs',
-#     'summary_path': 'debug/summary.yml'
-# })
-#
-# trainer = MaskRCNNTrainer(config)
-# trainer.start()
+    # TODO: read this from command line, because I am not the only one in the project
+    config.set('available_gpus', [8])
+    config.set('experiments_dir', 'densepose-experiments')
+
+    trainer = DensePoseRCNNTrainer(config)
+    trainer.start()
+
+
+if __name__ == '__main__':
+    main()

@@ -18,7 +18,6 @@ from PIL import Image
 from src.dataloaders.coco import CocoDetection
 from src.models import DensePoseRCNN
 from src.utils.densepose_cocoeval import denseposeCOCOeval
-from src.utils.dp_targets import resize_dp_predictions
 from src.structures.bbox import Bbox
 
 
@@ -33,7 +32,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
         self.model = DensePoseRCNN(backbone,
                                    num_maskrcnn_classes=91,
                                    dp_head_output_size=self.config.hp.dp_head_output_size)
-        self.model = self.model.to(self.config.firelab.device_name)
+        self.model = self.model.to(self.device_name)
 
     def init_dataloaders(self):
         def collate_batch(batch):
@@ -50,9 +49,9 @@ class DensePoseRCNNTrainer(BaseTrainer):
         def torchvision_target_format(target):
             return {
                 'image_id': target[0]['image_id'],
-                'labels': torch.Tensor([obj['category_id'] for obj in target]).long().to(self.config.firelab.device_name),
-                'boxes': torch.Tensor([xywh_to_xyxy(obj['bbox']) for obj in target]).to(self.config.firelab.device_name),
-                'masks': torch.Tensor([obj['mask'] for obj in target]).to(self.config.firelab.device_name),
+                'labels': torch.Tensor([obj['category_id'] for obj in target]).long().to(self.device_name),
+                'boxes': torch.Tensor([xywh_to_xyxy(obj['bbox']) for obj in target]).to(self.device_name),
+                'masks': torch.Tensor([obj['mask'] for obj in target]).to(self.device_name),
                 'coco_anns': target,
             }
 
@@ -81,7 +80,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
 
     def train_on_batch(self, batch):
         images, targets = batch
-        images = [img.to(self.config.firelab.device_name) for img in images]
+        images = [img.to(self.device_name) for img in images]
 
         self.model.train()
 
@@ -108,7 +107,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
 
         for images, targets in self.val_dataloader:
             with torch.no_grad():
-                preds = self.model(torch.stack(images).to(self.config.firelab.device_name))
+                preds = self.model(torch.stack(images).to(self.device_name))
 
             for img_idx in range(len(images)):
                 for bbox_idx in range(len(preds[img_idx]['boxes'])):
@@ -137,7 +136,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
             self.logger.warn(f'Skipping validation on epoch {self.num_epochs_done}, because no predictions are made')
             return
 
-        val_results_dir = f'{self.config.firelab.custom_data_path}/val_results'
+        val_results_dir = os.path.join(self.paths.custom_data_path, 'val_results')
         if not os.path.isdir(val_results_dir):
             os.mkdir(val_results_dir)
 

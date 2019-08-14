@@ -25,7 +25,7 @@ class MaskRCNNTrainer(BaseTrainer):
             num_classes=91,
             pretrained_backbone=False,
             **self.config.hp.model_config.to_dict())
-        self.model = self.model.to(self.config.firelab.device_name)
+        self.model = self.model.to(self.device_name)
 
     def init_dataloaders(self):
         def collate_batch(batch):
@@ -42,9 +42,9 @@ class MaskRCNNTrainer(BaseTrainer):
         def torchvision_target_format(target):
             return {
                 'image_id': target[0]['image_id'],
-                'labels': torch.Tensor([obj['category_id'] for obj in target]).long().to(self.config.firelab.device_name),
-                'boxes': torch.Tensor([to_xyxy_format(obj['bbox']) for obj in target]).to(self.config.firelab.device_name),
-                'masks': torch.Tensor([obj['mask'] for obj in target]).to(self.config.firelab.device_name)
+                'labels': torch.Tensor([obj['category_id'] for obj in target]).long().to(self.device_name),
+                'boxes': torch.Tensor([to_xyxy_format(obj['bbox']) for obj in target]).to(self.device_name),
+                'masks': torch.Tensor([obj['mask'] for obj in target]).to(self.device_name)
             }
 
         train_ds = CocoDetection(f'{self.config.coco_data_dir}/coco_train2014',
@@ -67,7 +67,7 @@ class MaskRCNNTrainer(BaseTrainer):
 
     def train_on_batch(self, batch):
         images, targets = batch
-        images = [img.to(self.config.firelab.device_name) for img in images]
+        images = [img.to(self.device_name) for img in images]
 
         self.model.train()
 
