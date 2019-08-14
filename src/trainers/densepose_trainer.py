@@ -25,6 +25,9 @@ class DensePoseRCNNTrainer(BaseTrainer):
     def __init__(self, config):
         super(DensePoseRCNNTrainer, self).__init__(config)
 
+        if self.device_name == 'cpu':
+            self.logger.warn('I am running on CPU and gonna be very slow...')
+
     def init_models(self):
         # backbone = mobilenet_v2(pretrained=True)
         backbone = resnet_fpn_backbone('resnet50', pretrained=True)

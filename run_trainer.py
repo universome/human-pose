@@ -1,19 +1,33 @@
+import argparse
+from typing import Dict
+
 import sys; sys.path.append('.')
 from src.trainers.maskrcnn_trainer import MaskRCNNTrainer
 from src.trainers.densepose_trainer import DensePoseRCNNTrainer
 from firelab.utils.fs_utils import load_config
 
 
-def main():
+def run_trainer(args:Dict):
+    # TODO: read some staff from command line and overwrite config
     config = load_config('configs/densepose-rcnn.yml')
 
-    # TODO: read this from command line, because I am not the only one in the project
-    config.set('available_gpus', [8])
-    config.set('experiments_dir', 'densepose-experiments')
+    config.set('available_gpus', args['available_gpus'])
+    config.set('experiments_dir', args['experiments_dir'])
+
+
+    print('available_gpus', config.available_gpus)
 
     trainer = DensePoseRCNNTrainer(config)
     trainer.start()
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Training the model',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-g', '--available_gpus', default=[], type=int, nargs='+',
+                        help='Which GPUs I should use (that are visible to me)')
+    parser.add_argument('-d', '--experiments_dir', default='experiments', type=str,
+                        help='Directory where to save checkpoints/logs/etc')
+    args = vars(parser.parse_args())
+
+    run_trainer(args)
