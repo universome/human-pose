@@ -2,7 +2,7 @@ from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
-from torchvision.models.detection.roi_heads import (
+from src.models.detection.roi_heads import (
     RoIHeads,
     fastrcnn_loss,
     maskrcnn_loss,

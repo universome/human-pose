@@ -10,11 +10,9 @@ from firelab import BaseTrainer
 from torch.utils.data import DataLoader, Subset
 from torch.nn.utils.clip_grad import clip_grad_norm_
 from torchvision import transforms
-from torchvision.models.detection.mask_rcnn import MaskRCNN, maskrcnn_resnet50_fpn
-from torchvision.models import mobilenet_v2
-from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
 from PIL import Image
 
+from src.models.detection.backbone_utils import resnet_fpn_backbone
 from src.dataloaders.coco import CocoDetection
 from src.models import DensePoseRCNN
 from src.utils.densepose_cocoeval import denseposeCOCOeval

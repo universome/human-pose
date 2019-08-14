@@ -7,8 +7,8 @@ import numpy as np
 
 from torchvision.ops import misc as misc_nn_ops
 from torchvision.ops import MultiScaleRoIAlign
-from torchvision.models.detection.mask_rcnn import MaskRCNN, MaskRCNNHeads
-from torchvision.models.detection.transform import resize_boxes, paste_masks_in_image, resize_keypoints
+from src.models.detection.mask_rcnn import MaskRCNN, MaskRCNNHeads
+from src.models.detection.transform import resize_boxes, paste_masks_in_image, resize_keypoints
 
 from .densepose_roi_heads import DensePoseRoIHeads
 from src.structures.bbox import Bbox
