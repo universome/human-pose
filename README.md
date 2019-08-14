@@ -1,5 +1,11 @@
 This repo contains some experiments with DensePose estimation
 
+How to run:
+```
+pip install -r requirements.txt
+python run_trainer.py --available_gpus 8 9 --experiments_dir=densepose-experiments
+```
+
 Ideas/TODOs:
 * Even in MaskTrack R-CNN we run backbone for each frame independently. Can we train some kind of recurrent model (in an unsupervised way), which we'll try to predict embeddings, which are predicted by backbone? It should be much cheaper, isn't it?.
 * How can MaskTrack R-CNN run 20 FPS if it is identical to normal Mask-RCNN, but with a new tracking head?
