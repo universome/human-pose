@@ -1,7 +1,6 @@
 This repo contains some experiments with DensePose estimation
 
 ### How to run
-First you should get the data:
 
 1\. Download COCO images
 ```
@@ -40,8 +39,10 @@ pip install -r requirements.txt
 
 5\. Finally you can start training by running:
 ```
-python run_trainer.py --available_gpus 8 9 --experiments_dir=densepose-experiments
+python run_trainer.py --experiments_dir=my-experiments
 ```
+Experiment results will be saved into `my-experiments` directory.
+If you want to run on GPU you should additionally provide `--available_gpus` argument specifying which GPUs you allow to use.
 
 ### Ideas/TODOs
 * Even in MaskTrack R-CNN we run backbone for each frame independently. Can we train some kind of recurrent model (in an unsupervised way), which we'll try to predict embeddings, which are predicted by backbone? It should be much cheaper, isn't it?.
