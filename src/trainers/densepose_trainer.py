@@ -54,22 +54,25 @@ class DensePoseRCNNTrainer(BaseTrainer):
                 'coco_anns': target,
             }
 
-        # train_ds = CocoDetection(f'{self.config.coco_data_dir}/train2014',
-        #                          f'{self.config.coco_data_dir}/annotations/instances_train2014.json',
+        # train_ds = CocoDetection(f'{self.config.data.coco_dir}/train2014',
+        #                          f'{self.config.data.annotations_dir}/densepose_coco_2014_train.json',
         #                          transform=transforms.ToTensor(),
         #                          target_transform=torchvision_target_format)
-        # val_ds = CocoDetection(f'{self.config.coco_data_dir}/val2014',
-        #                          f'{self.config.coco_data_dir}/annotations/instances_val2014.json',
+        # val_ds = CocoDetection(f'{self.config.data.coco_dir}/val2014',
+        #                          f'{self.config.data.coco_dir}/densepose_coco_2014_test.json',
         #                          transform=transforms.ToTensor(),
         #                          target_transform=torchvision_target_format)
         train_ds = CocoDetection(f'{self.config.data.coco_dir}/train2014',
+                               f'{self.config.data.annotations_dir}/densepose_coco_2014_tiny.json',
+                               transform=transforms.ToTensor(),
+                               target_transform=torchvision_target_format)
+        val_ds = CocoDetection(f'{self.config.data.coco_dir}/train2014',
                                  f'{self.config.data.annotations_dir}/densepose_coco_2014_tiny.json',
                                  transform=transforms.ToTensor(),
                                  target_transform=torchvision_target_format)
-        val_ds = train_ds
 
         self.train_dataloader = DataLoader(train_ds, batch_size=self.config.hp.batch_size, collate_fn=collate_batch)
-        self.val_dataloader = DataLoader(val_ds, batch_size=1, collate_fn=collate_batch)
+        self.val_dataloader = DataLoader(val_ds, batch_size=2, collate_fn=collate_batch)
 
     def init_optimizers(self):
         # TODO: lr scheduling
@@ -106,7 +109,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
 
         for images, targets in self.val_dataloader:
             with torch.no_grad():
-                preds = self.model(torch.stack(images).to(self.device_name))
+                preds = self.model([img.to(self.device_name) for img in images])
 
             for img_idx in range(len(images)):
                 for bbox_idx in range(len(preds[img_idx]['boxes'])):
@@ -125,9 +128,11 @@ class DensePoseRCNNTrainer(BaseTrainer):
                     dp_predictions.append({
                         "image_id": targets[img_idx]['image_id'],
                         "category_id": 1,
-                        "uv_shape": [3, round(bbox.height), round(bbox.width)],
+                        "uv_shape": uv_data.shape,
                         "score": preds[img_idx]['scores'][bbox_idx].item(),
-                        "bbox": [bbox.x, bbox.y, bbox.width, bbox.height],
+                        # TODO: We have to use uv_data shape parameters, because densepose_cocoeval
+                        #  fails otherwise in different places
+                        "bbox": [bbox.x, bbox.y, uv_data.shape[2], uv_data.shape[1]],
                         "uv_data": uv_png
                     })
 
@@ -139,7 +144,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
         if not os.path.isdir(val_results_dir):
             os.mkdir(val_results_dir)
 
-        results_file_path = f'{val_results_dir}/epoch-{self.num_epochs_done}.json'
+        results_file_path = f'{val_results_dir}/iter-{self.num_iters_done}.json'
 
         with open(results_file_path, 'w') as f:
             json.dump(dp_predictions, f)
@@ -147,7 +152,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
         # Now we can validate our predictions
         coco = self.val_dataloader.dataset.coco
         coco_res = coco.loadRes(results_file_path)
-        coco_eval = denseposeCOCOeval(self.config.data.eval_data, coco, coco_res)
+        coco_eval = denseposeCOCOeval(self.config.data.eval_data, coco, coco_res, iouType='uv')
         coco_eval.evaluate()
         coco_eval.accumulate()
         coco_eval.summarize()
