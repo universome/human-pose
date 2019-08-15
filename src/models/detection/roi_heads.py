@@ -582,7 +582,8 @@ class RoIHeads(torch.nn.Module):
         pos_matched_idxs = [(img_i, bb_i) for img_i, bbox_idxs in enumerate(pos_matched_idxs) for bb_i in bbox_idxs]
 
         # Filtering out those proposals, which correspond to objects that do not have densepose annotation
-        has_dp = lambda i: 'dp_masks' in coco_anns_flat[i]
+        # TODO: there are annotations with dp_masks but without dp_I/dp_U/dp_V, but we ignore them, which is not good
+        has_dp = lambda i: ('dp_I' in coco_anns_flat[i] and len(coco_anns_flat[i]['dp_I']) > 0)
         gt_bboxes_flat = [bb for i, bb in enumerate(gt_bboxes_flat) if has_dp(i)]
         dp_features = torch.stack([f for i, f in enumerate(dp_features) if has_dp(i)])
         dp_proposals = [p for i, p in enumerate(dp_proposals) if has_dp(i)]
