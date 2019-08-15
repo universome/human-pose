@@ -601,6 +601,12 @@ class RoIHeads(torch.nn.Module):
         dp_targets = [create_target_for_dp(targets[img_idx]['coco_anns'][bbox_idx], gt_bbox, proposal, dp_head_output_size) \
                         for (img_idx, bbox_idx), gt_bbox, proposal in zip(pos_matched_idxs, gt_bboxes_flat, dp_proposals)]
 
+        # TODO: one should better compute targets, then filter them and then compute predictions
+        has_non_empty_dp_targets = lambda i: dp_targets[i]['dp_x'].size > 0
+        dp_cls_logits = torch.stack([x for i, x in enumerate(dp_cls_logits) if has_non_empty_dp_targets(i)])
+        dp_uv_preds = torch.stack([x for i, x in enumerate(dp_uv_preds) if has_non_empty_dp_targets(i)])
+        dp_targets = [x for i, x in enumerate(dp_targets) if has_non_empty_dp_targets(i)]
+
         if len(dp_targets) == 0:
             return {
                 'dp_cls_bg_loss': torch.zeros(1, device=dp_cls_logits.device),

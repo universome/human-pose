@@ -75,10 +75,17 @@ def create_target_for_dp(coco_ann: Dict,
     proposal_dp_x = np.round(proposal_dp_x).astype(int)
     proposal_dp_y = np.round(proposal_dp_y).astype(int)
 
-    assert proposal_dp_x.min() >= 0
-    assert proposal_dp_x.max() < dp_head_output_size
-    assert proposal_dp_y.min() >= 0
-    assert proposal_dp_y.max() < dp_head_output_size
+    # We can have a situation where proposal dp_x/dp_y is empty
+    # Because 1) there is not point in intersection between two bboxes OR
+    #         2) we have annotations without dp_x/dp_y at all (but with dp_masks)
+    # TODO: calculate, how many such annotations (maybe we can just drop them)
+
+    if proposal_dp_x.size != 0:
+        assert proposal_dp_y.size != 0
+        assert proposal_dp_x.min() >= 0
+        assert proposal_dp_x.max() < dp_head_output_size
+        assert proposal_dp_y.min() >= 0
+        assert proposal_dp_y.max() < dp_head_output_size
 
     return {
         'dp_U': dp_U,
