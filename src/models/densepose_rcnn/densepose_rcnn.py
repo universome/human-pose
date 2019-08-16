@@ -1,7 +1,7 @@
 from torch import nn
 from torchvision.ops import misc as misc_nn_ops
 from torchvision.ops import MultiScaleRoIAlign
-from src.models.detection.mask_rcnn import MaskRCNN, MaskRCNNHeads
+from src.models.detection.mask_rcnn import MaskRCNN, MaskRCNNHeads, MaskRCNNPredictor
 
 __all__ = [
     "DensePoseRCNN"
@@ -69,4 +69,11 @@ class DensePoseRCNN(MaskRCNN):
             misc_nn_ops.ConvTranspose2d(256, 256, kernel_size=2, stride=2),
             nn.ReLU(inplace=True),
             misc_nn_ops.Conv2d(256, 25, 1, 1, 0),
+        )
+        self.roi_heads.densepose_mask_predictor = nn.Sequential(
+            misc_nn_ops.ConvTranspose2d(256, 256, kernel_size=2, stride=2),
+            nn.ReLU(inplace=True),
+            misc_nn_ops.ConvTranspose2d(256, 256, kernel_size=2, stride=2),
+            nn.ReLU(inplace=True),
+            misc_nn_ops.Conv2d(256, 14, 1, 1, 0),
         )

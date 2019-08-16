@@ -8,7 +8,7 @@ from torchvision.ops import misc as misc_nn_ops
 from torchvision.ops import roi_align
 
 from src.structures.bbox import Bbox
-from src.utils.dp_targets import  create_target_for_dp, compute_dp_cls_loss, compute_dp_uv_loss
+from src.utils.dp_targets import  create_target_for_dp, compute_dp_cls_loss, compute_dp_uv_loss, compute_dp_mask_loss
 from . import _utils as det_utils
 
 
@@ -592,6 +592,7 @@ class RoIHeads(torch.nn.Module):
         dp_features = self.densepose_head(dp_features)
         dp_cls_logits = self.densepose_class_predictor(dp_features)
         dp_uv_preds = self.densepose_uv_predictor(dp_features)
+        dp_mask_logits = self.densepose_mask_predictor(dp_features)
 
         # Converting to Bbox format
         dp_proposals = [Bbox.from_torch_tensor(bb) for bb in dp_proposals]
@@ -605,6 +606,7 @@ class RoIHeads(torch.nn.Module):
         has_non_empty_dp_targets = lambda i: dp_targets[i]['dp_x'].size > 0
         dp_cls_logits = torch.stack([x for i, x in enumerate(dp_cls_logits) if has_non_empty_dp_targets(i)])
         dp_uv_preds = torch.stack([x for i, x in enumerate(dp_uv_preds) if has_non_empty_dp_targets(i)])
+        dp_mask_logits = torch.stack([x for i, x in enumerate(dp_mask_logits) if has_non_empty_dp_targets(i)])
         dp_targets = [x for i, x in enumerate(dp_targets) if has_non_empty_dp_targets(i)]
 
         if len(dp_targets) == 0:
@@ -614,17 +616,21 @@ class RoIHeads(torch.nn.Module):
                 'dp_uv_loss': torch.zeros(1, device=dp_cls_logits.device)
             }
 
-        dp_cls_bg_losses, dp_cls_fg_losses = zip(*[compute_dp_cls_loss(cls_logits, dp_trg) for cls_logits, dp_trg in zip(dp_cls_logits, dp_targets)])
-        dp_u_losses, dp_v_losses = zip(*[compute_dp_uv_loss(uv_preds, dp_trg) for uv_preds, dp_trg in zip(dp_uv_preds, dp_targets)])
+        dp_cls_bg_losses, dp_cls_fg_losses = zip(*[
+            compute_dp_cls_loss(x, dp_trg) for x, dp_trg in zip(dp_cls_logits, dp_targets)])
+        dp_u_losses, dp_v_losses = zip(*[compute_dp_uv_loss(x, dp_trg) for x, dp_trg in zip(dp_uv_preds, dp_targets)])
+        dp_mask_losses = [compute_dp_mask_loss(x, dp_trg) for x, dp_trg in zip(dp_mask_logits, dp_targets)]
 
         dp_cls_bg_loss, dp_cls_fg_loss = torch.stack(dp_cls_bg_losses).mean(), torch.stack(dp_cls_fg_losses).mean()
         dp_u_loss, dp_v_loss = torch.stack(dp_u_losses).mean(), torch.stack(dp_v_losses).mean()
+        dp_mask_loss = torch.stack(dp_mask_losses).mean()
 
         return {
             'dp_cls_bg_loss': dp_cls_bg_loss,
             'dp_cls_fg_loss': dp_cls_fg_loss,
             'dp_u_loss': dp_u_loss,
-            'dp_v_loss': dp_v_loss
+            'dp_v_loss': dp_v_loss,
+            'dp_mask_loss': dp_mask_loss
         }
 
     def run_densepose_head_during_eval(self, features, image_shapes, dp_proposals):
