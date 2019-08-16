@@ -130,6 +130,7 @@ def compute_dp_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
     # TODO:
     #   It feels like we should weight losses for different body parts by number of points.
     #   Or we can just average by body part first and than average out all losses
+    # TODO: it feels that bg loss is unnecessary for a patch head
 
     bg_loss = compute_dp_bg_cls_loss(cls_logits, dp_targets)
     fg_loss = F.cross_entropy(
@@ -139,13 +140,23 @@ def compute_dp_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
     return bg_loss, fg_loss
 
 
-def compute_dp_bg_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
+def compute_dp_bg_cls_loss(cls_logits: torch.Tensor, dp_targets: Dict):
     bg_mask = torch.Tensor(create_bg_mask_from_dp_masks(dp_targets['dp_masks'])).bool().to(cls_logits.device)
     bg_logits = cls_logits.permute(1, 2, 0)[bg_mask]
 
     assert bg_logits.size() == (bg_mask.sum(), 25), f"Wrong bg_logits shape: {bg_logits.size()}"
 
     return F.cross_entropy(bg_logits, torch.zeros(bg_mask.sum()).long().to(bg_logits.device))
+
+
+def compute_dp_mask_loss(mask_logits: torch.Tensor, dp_targets:Dict):
+    # We couldn't use maskrcnn_loss from torchvision, because are masks are already projected properly
+    # TODO:
+    #  Here we assume that if dp_masks annotation for some label is absent for an object
+    #  then this body part is not present on an image. It maybe not true and maybe just annotators were lazy
+    targets = torch.Tensor(dp_targets['dp_masks']).float().to(mask_logits.device)
+
+    return F.binary_cross_entropy_with_logits(mask_logits, targets)
 
 
 def extract_dp_masks_from_coco_ann(coco_ann, dp_head_output_size: int) -> List[np.array]:
