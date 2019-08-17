@@ -154,6 +154,7 @@ def compute_dp_mask_loss(mask_logits: torch.Tensor, dp_targets:Dict):
     # TODO:
     #  Here we assume that if dp_masks annotation for some label is absent for an object
     #  then this body part is not present on an image. It maybe not true and maybe just annotators were lazy
+    # TODO: should we calibrate the losses for bg/fg class? It feels like yes.
     targets = torch.Tensor(dp_targets['dp_masks']).float().to(mask_logits.device)
 
     return F.binary_cross_entropy_with_logits(mask_logits, targets)

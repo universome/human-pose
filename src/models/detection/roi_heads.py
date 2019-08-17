@@ -431,11 +431,13 @@ class RoIHeads(torch.nn.Module):
 
     @property
     def has_densepose(self):
-        if self.densepose_roi_pool is None:
+        if not hasattr(self, 'densepose_roi_pool'):
             return False
-        if self.densepose_uv_predictor is None:
+        if hasattr(self, 'densepose_uv_predictor'):
             return False
-        if self.densepose_class_predictor is None:
+        if hasattr(self, 'densepose_class_predictor'):
+            return False
+        if hasattr(self, 'densepose_mask_predictor'):
             return False
         return True
 
@@ -645,12 +647,14 @@ class RoIHeads(torch.nn.Module):
         dp_features = self.densepose_head(dp_features)
         dp_cls_logits = self.densepose_class_predictor(dp_features)
         dp_uv_coords = self.densepose_uv_predictor(dp_features)
+        dp_mask_logits = self.densepose_mask_predictor(dp_features)
 
         num_boxes_per_image = [len(ps) for ps in dp_proposals]
         dp_cls_logits = dp_cls_logits.split(num_boxes_per_image)
         dp_uv_coords = dp_uv_coords.split(num_boxes_per_image)
+        dp_mask_logits = dp_mask_logits.split(num_boxes_per_image)
 
-        return dp_cls_logits, dp_uv_coords
+        return dp_cls_logits, dp_uv_coords, dp_mask_logits
 
     def forward(self, features, proposals, image_shapes, targets=None):
         """
@@ -763,10 +767,11 @@ class RoIHeads(torch.nn.Module):
             losses.update(dp_losses)
         else:
             dp_proposals = [p["boxes"] for p in result]
-            dp_cls_logits, dp_uv_coords = self.run_densepose_head_during_eval(features, image_shapes, dp_proposals)
+            dp_cls_logits, dp_uv_coords, dp_mask_logits = self.run_densepose_head_during_eval(features, image_shapes, dp_proposals)
 
-            for cls_logits, uv_coords, r in zip(dp_cls_logits, dp_uv_coords, result):
+            for cls_logits, uv_coords, mask_logits, r in zip(dp_cls_logits, dp_uv_coords, dp_mask_logits, result):
                 r["dp_cls_logits"] = cls_logits
                 r["dp_uv_coords"] = uv_coords
+                r["dp_mask_logits"] = mask_logits
 
         return result, losses

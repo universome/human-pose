@@ -123,8 +123,8 @@ class GeneralizedRCNNTransform(nn.Module):
                 keypoints = resize_keypoints(keypoints, im_s, o_im_s)
                 result[i]["keypoints"] = keypoints
             if "dp_cls_logits" in pred:
-                pred["dp_classes"], pred["dp_u_coords"], pred["dp_v_coords"] = \
-                    postprocess_dp_predictions(pred["dp_cls_logits"], pred["dp_uv_coords"], boxes)
+                pred["dp_classes"], pred["dp_u_coords"], pred["dp_v_coords"], pred['dp_masks'] = \
+                    postprocess_dp_predictions(pred["dp_cls_logits"], pred["dp_uv_coords"], pred['dp_mask_logits'], boxes)
 
         return result
 
@@ -149,13 +149,14 @@ def resize_boxes(boxes, original_size, new_size):
     return torch.stack((xmin, ymin, xmax, ymax), dim=1)
 
 
-def postprocess_dp_predictions(dp_cls_logits, dp_uv_coords, boxes):
+def postprocess_dp_predictions(dp_cls_logits, dp_uv_coords, dp_mask_logits, boxes):
     if len(boxes) == 0:
         dp_classes = torch.empty(0, 10, 10)
         dp_u_coords = torch.empty(0, 10, 10)
         dp_v_coords = torch.empty(0, 10, 10)
+        dp_masks = torch.empty(0, 10, 10)
 
-        return dp_classes, dp_u_coords, dp_v_coords
+        return dp_classes, dp_u_coords, dp_v_coords, dp_masks
 
     bboxes = [Bbox.from_torch_tensor(p).discretize() for p in boxes]
     target_sizes = [(bb.width, bb.height) for bb in bboxes]
@@ -163,14 +164,16 @@ def postprocess_dp_predictions(dp_cls_logits, dp_uv_coords, boxes):
                      for x, s in zip(dp_cls_logits, target_sizes)]
     dp_uv_coords = [F.interpolate(x.unsqueeze(0), size=s, mode='bilinear').squeeze(0) \
                     for x, s in zip(dp_uv_coords, target_sizes)]
+    dp_mask_logits = [F.interpolate(x.unsqueeze(0), size=s, mode='bilinear').squeeze(0) \
+                      for x, s in zip(dp_mask_logits, target_sizes)]
 
-    results = [get_most_confident_dp_predictions(l, uv) for l, uv in zip(dp_cls_logits, dp_uv_coords)]
-    dp_classes, dp_u_coords, dp_v_coords = zip(*results)
+    results = [get_confident_fg_predictions(l, uv, m) for l, uv, m in zip(dp_cls_logits, dp_uv_coords, dp_mask_logits)]
+    dp_classes, dp_u_coords, dp_v_coords, dp_masks = zip(*results)
 
-    return dp_classes, dp_u_coords, dp_v_coords
+    return dp_classes, dp_u_coords, dp_v_coords, dp_masks
 
 
-def get_most_confident_dp_predictions(dp_cls_logits, dp_uv_coords):
+def get_confident_fg_predictions(dp_cls_logits, dp_uv_coords, dp_mask_logits):
     # TODO: We can try and parallelize the computation by first padding to largest value
     #       then stacking and computing for all. But this does not work because of OOM.
     #       So, we should sort by size and split into batches.
@@ -179,6 +182,7 @@ def get_most_confident_dp_predictions(dp_cls_logits, dp_uv_coords):
     c, w, h = dp_cls_logits.shape
     dp_cls_logits = dp_cls_logits.permute(1, 2, 0)
     dp_uv_coords = dp_uv_coords.permute(1, 2, 0)
+    dp_mask_logits = dp_mask_logits.permute(1, 2, 0)
 
     # Leaving only the most confident body part
     dp_classes = dp_cls_logits.argmax(dim=2, keepdim=True)
@@ -198,4 +202,12 @@ def get_most_confident_dp_predictions(dp_cls_logits, dp_uv_coords):
     dp_u_coords = dp_u_coords.masked_select(max_cls_mask).view(w, h)
     dp_v_coords = dp_v_coords.masked_select(max_cls_mask).view(w, h)
 
-    return dp_classes, dp_u_coords, dp_v_coords
+    # Copmuting dp_mask is easy:
+    dp_mask = dp_mask_logits.argmax(dim=2)
+
+    # We should set predictions of background to 0
+    dp_classes[dp_mask == 0] = 0
+    dp_u_coords[dp_mask == 0] = 0.
+    dp_v_coords[dp_mask == 0] = 0.
+
+    return dp_classes, dp_u_coords, dp_v_coords, dp_mask
