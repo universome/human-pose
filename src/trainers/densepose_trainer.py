@@ -149,16 +149,19 @@ class DensePoseRCNNTrainer(BaseTrainer):
         with open(results_file_path, 'w') as f:
             json.dump(dp_predictions, f)
 
-        # Now we can validate our predictions
-        coco = self.val_dataloader.dataset.coco
-        coco_res = coco.loadRes(results_file_path)
-        coco_eval = denseposeCOCOeval(self.config.data.eval_data, coco, coco_res, iouType='uv')
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        coco_eval.summarize()
+        for iou_type in self.config.get('val_iou_types', ['uv', 'segm', 'bbox']):
+            # Now we can validate our predictions
+            # TODO: Compare with validation in json_dataset_evaluator.py
+            # TODO: It feels like we should also use test_sigma=0.255
+            print(f'Running {iou_type} validation...')
+            coco = self.val_dataloader.dataset.coco
+            coco_res = coco.loadRes(results_file_path)
+            coco_eval = denseposeCOCOeval(self.config.data.eval_data, coco, coco_res, iouType=iou_type)
+            coco_eval.evaluate()
+            coco_eval.accumulate()
+            coco_eval.summarize()
 
-        self.writer.add_scalar('val/mAP_at_IoU_0_50__0_95', coco_eval.stats[0], self.num_epochs_done)
-
+            self.writer.add_scalar(f'val/mAP_at_IoU_0_50__0_95_{iou_type}', coco_eval.stats[0], self.num_epochs_done)
 
 def _encodePngData(arr):
     """
