@@ -159,7 +159,7 @@ def postprocess_dp_predictions(dp_cls_logits, dp_uv_coords, dp_mask_logits, boxe
         return dp_classes, dp_u_coords, dp_v_coords, dp_masks
 
     bboxes = [Bbox.from_torch_tensor(p).discretize() for p in boxes]
-    target_sizes = [(bb.width, bb.height) for bb in bboxes]
+    target_sizes = [(bb.height, bb.width) for bb in bboxes]
     dp_cls_logits = [F.interpolate(x.unsqueeze(0), size=s, mode='bilinear').squeeze(0) \
                      for x, s in zip(dp_cls_logits, target_sizes)]
     dp_uv_coords = [F.interpolate(x.unsqueeze(0), size=s, mode='bilinear').squeeze(0) \

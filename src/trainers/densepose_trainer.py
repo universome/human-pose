@@ -120,7 +120,6 @@ class DensePoseRCNNTrainer(BaseTrainer):
                         preds[img_idx]['dp_u_coords'][bbox_idx],
                         preds[img_idx]['dp_v_coords'][bbox_idx]],
                     dim=0).data.cpu().numpy()
-                    uv_data = uv_data.transpose(0, 2, 1) # [W x H] to [H x W], because densepose_cocoeval requires this
                     uv_data[1:] = uv_data[1:] * 255 # Converting to 255 range
                     uv_png = _encodePngData(uv_data.astype(np.uint8))
                     bbox = Bbox.from_torch_tensor(preds[img_idx]['boxes'][bbox_idx])
