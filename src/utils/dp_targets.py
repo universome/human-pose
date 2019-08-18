@@ -170,24 +170,15 @@ def extract_dp_mask_from_coco_ann(coco_ann, gt_bbox: Bbox, dt_bbox: Bbox, dp_hea
 
     masks = [mask_utils.decode(m) if isinstance(m, dict) else np.zeros((256, 256)) for m in coco_ann['dp_masks']]
 
+    # Converting to class mask (to speed things up)
+    mask = np.array([m * (i + 1) for i, m in enumerate(masks)]).sum(axis=0)
+
     # TODO: it feels like this is not the best strategy to project the mask
     #  because we are loosing some information when resizing several times...
     gt_bbox = gt_bbox.discretize()
-    masks = [resize(m.astype(float), (gt_bbox.height, gt_bbox.width)) for m in masks]
-    projected = [project_mask(m, gt_bbox, dt_bbox) for m in masks]
-
-    # Resizing to the size of our future output
-    downsampled = np.array([resize(m.astype(np.float), (dp_head_output_size, dp_head_output_size)) for m in projected])
-
-    # We are choosing the most probable class in the given pixel after downsampling
-    mask = downsampled.argmax(axis=0)
-
-    # Leaving 0 class to background
-    mask = mask + 1
-
-    # Make those pixels where we are unsure be of background class
-    # TODO: is this a good threshold?
-    mask[downsampled.max(axis=0) < 0.5] = 0
+    mask = mask_resize(mask.astype(float), (gt_bbox.height, gt_bbox.width))
+    mask = project_mask(mask, gt_bbox, dt_bbox)
+    mask = mask_resize(mask, (dp_head_output_size, dp_head_output_size))
 
     return mask
 
@@ -231,3 +222,9 @@ def create_bg_mask_from_dp_masks(dp_masks: np.array):
     assert dp_masks.ndim == 3, f"Expected each mask to be binary"
 
     return (dp_masks.astype(bool).sum(axis=0) - 1).astype(bool)
+
+
+def mask_resize(mask, size):
+    """Resizes mask using nearest neighbor"""
+    return resize(mask, size, order=0, mode='edge', anti_aliasing=False,
+                  anti_aliasing_sigma=None, preserve_range=True)
