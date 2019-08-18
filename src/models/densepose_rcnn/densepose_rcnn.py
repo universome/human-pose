@@ -75,5 +75,5 @@ class DensePoseRCNN(MaskRCNN):
             nn.ReLU(inplace=True),
             misc_nn_ops.ConvTranspose2d(256, 256, kernel_size=2, stride=2),
             nn.ReLU(inplace=True),
-            misc_nn_ops.Conv2d(256, 14, 1, 1, 0),
+            misc_nn_ops.Conv2d(256, 15, 1, 1, 0),
         )

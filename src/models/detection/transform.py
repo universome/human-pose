@@ -180,30 +180,27 @@ def get_confident_fg_predictions(dp_cls_logits, dp_uv_coords, dp_mask_logits):
 
     # Convert to [C x W x H] to [W x H x C] for convenience
     c, w, h = dp_cls_logits.shape
-    dp_cls_logits = dp_cls_logits.permute(1, 2, 0)
-    dp_uv_coords = dp_uv_coords.permute(1, 2, 0)
-    dp_mask_logits = dp_mask_logits.permute(1, 2, 0)
 
     # Leaving only the most confident body part
-    dp_classes = dp_cls_logits.argmax(dim=2, keepdim=True)
-    idx = torch.arange(c).view(1, 1, -1).repeat(w, h, 1)
+    dp_classes = dp_cls_logits.argmax(dim=0, keepdim=True)
+    idx = torch.arange(c).view(-1, 1, 1).repeat(1, w, h)
     max_cls_mask = idx.to(dp_classes.device) == dp_classes
-    dp_classes = dp_classes.squeeze(2)
+    dp_classes = dp_classes.squeeze(0)
 
     # Extract UV-coords
-    dp_u_coords, dp_v_coords = dp_uv_coords[:, :, :24], dp_uv_coords[:, :, 24:]
+    dp_u_coords, dp_v_coords = dp_uv_coords[:24, :, :], dp_uv_coords[24:, :, :]
 
     # Add dummy background predictions so we can use masked_select later (make the same dimensionality as dp_classes)
-    bg_dummy_coords = torch.zeros(w, h, 1).to(dp_u_coords.device)
-    dp_u_coords = torch.cat([bg_dummy_coords, dp_u_coords], dim=2)
-    dp_v_coords = torch.cat([bg_dummy_coords, dp_v_coords], dim=2)
+    bg_dummy_coords = torch.zeros(1, w, h).to(dp_u_coords.device)
+    dp_u_coords = torch.cat([bg_dummy_coords, dp_u_coords], dim=0)
+    dp_v_coords = torch.cat([bg_dummy_coords, dp_v_coords], dim=0)
 
     # Select coordinates for the most confident class
     dp_u_coords = dp_u_coords.masked_select(max_cls_mask).view(w, h)
     dp_v_coords = dp_v_coords.masked_select(max_cls_mask).view(w, h)
 
     # Copmuting dp_mask is easy:
-    dp_mask = dp_mask_logits.argmax(dim=2)
+    dp_mask = dp_mask_logits.argmax(dim=0)
 
     # We should set predictions of background to 0
     dp_classes[dp_mask == 0] = 0

@@ -93,7 +93,7 @@ def create_target_for_dp(coco_ann: Dict,
         'dp_I': dp_I,
         'dp_x': proposal_dp_x,
         'dp_y': proposal_dp_y,
-        'dp_masks': extract_dp_masks_from_coco_ann(coco_ann, dp_head_output_size),
+        'dp_mask': extract_dp_mask_from_coco_ann(coco_ann, dp_head_output_size),
     }
 
 
@@ -141,7 +141,7 @@ def compute_dp_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
 
 
 def compute_dp_bg_cls_loss(cls_logits: torch.Tensor, dp_targets: Dict):
-    bg_mask = torch.Tensor(create_bg_mask_from_dp_masks(dp_targets['dp_masks'])).bool().to(cls_logits.device)
+    bg_mask = torch.from_numpy(dp_targets['dp_mask'] == 0).to(cls_logits.device)
     bg_logits = cls_logits.permute(1, 2, 0)[bg_mask]
 
     assert bg_logits.size() == (bg_mask.sum(), 25), f"Wrong bg_logits shape: {bg_logits.size()}"
@@ -150,24 +150,35 @@ def compute_dp_bg_cls_loss(cls_logits: torch.Tensor, dp_targets: Dict):
 
 
 def compute_dp_mask_loss(mask_logits: torch.Tensor, dp_targets:Dict):
-    # We couldn't use maskrcnn_loss from torchvision, because are masks are already projected properly
     # TODO:
     #  Here we assume that if dp_masks annotation for some label is absent for an object
     #  then this body part is not present on an image. It maybe not true and maybe just annotators were lazy
     # TODO: should we calibrate the losses for bg/fg class? It feels like yes.
-    targets = torch.Tensor(dp_targets['dp_masks']).float().to(mask_logits.device)
 
-    return F.binary_cross_entropy_with_logits(mask_logits, targets)
+    targets = torch.Tensor(dp_targets['dp_mask']).long().to(mask_logits.device)
+    mask_logits = mask_logits.permute(1, 2, 0).view(-1, 15) # [C x W x H] => [W*H x C]
+
+    return F.cross_entropy(mask_logits, targets.view(-1))
 
 
-def extract_dp_masks_from_coco_ann(coco_ann, dp_head_output_size: int) -> List[np.array]:
+def extract_dp_mask_from_coco_ann(coco_ann, dp_head_output_size: int) -> List[np.array]:
     """
-    Returns binary masks for each body part
+    Returns categorical mask with classes {0, 1, ... , 14}
     """
     masks = [mask_utils.decode(m) if isinstance(m, dict) else np.zeros((256, 256)) for m in coco_ann['dp_masks']]
-    masks = [downsample_mask(m, dp_head_output_size) for m in masks]
+    downsampled = np.array([resize(m.astype(np.float), (dp_head_output_size, dp_head_output_size)) for m in masks])
 
-    return np.array(masks)
+    # We are choosing the most probable class in the given pixel after downsampling
+    mask = downsampled.argmax(axis=0)
+
+    # Leaving 0 class to background
+    mask = mask + 1
+
+    # Make those pixels where we are unsure be of background class
+    # TODO: is this a good threshold?
+    mask[downsampled.max(axis=0) < 0.5] = 0
+
+    return mask
 
 
 def downsample_mask(mask: np.array, output_size: int, threshold: float=0.5) -> np.array:

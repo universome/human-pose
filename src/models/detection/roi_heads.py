@@ -615,7 +615,9 @@ class RoIHeads(torch.nn.Module):
             return {
                 'dp_cls_bg_loss': torch.zeros(1, device=dp_cls_logits.device),
                 'dp_cls_fg_loss': torch.zeros(1, device=dp_cls_logits.device),
-                'dp_uv_loss': torch.zeros(1, device=dp_cls_logits.device)
+                'dp_u_loss': torch.zeros(1, device=dp_cls_logits.device),
+                'dp_v_loss': torch.zeros(1, device=dp_cls_logits.device),
+                'dp_mask_loss': torch.zeros(1, device=dp_cls_logits.device),
             }
 
         dp_cls_bg_losses, dp_cls_fg_losses = zip(*[
@@ -640,8 +642,9 @@ class RoIHeads(torch.nn.Module):
         if len(dp_proposals) == 1 and dp_proposals[0].numel() == 0:
             dp_cls_logits = [torch.empty(0, 1, 1)]
             dp_uv_coords = [torch.empty(0, 1, 1)]
+            dp_mask_logits = [torch.empty(0, 1, 1)]
 
-            return dp_cls_logits, dp_uv_coords
+            return dp_cls_logits, dp_uv_coords, dp_mask_logits
 
         dp_features = self.densepose_roi_pool(features, dp_proposals, image_shapes)
         dp_features = self.densepose_head(dp_features)
