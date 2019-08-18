@@ -93,7 +93,7 @@ def create_target_for_dp(coco_ann: Dict,
         'dp_I': dp_I,
         'dp_x': proposal_dp_x,
         'dp_y': proposal_dp_y,
-        'dp_mask': extract_dp_mask_from_coco_ann(coco_ann, dp_head_output_size),
+        'dp_mask': extract_dp_mask_from_coco_ann(coco_ann, gt_bbox, proposal, dp_head_output_size),
     }
 
 
@@ -161,12 +161,23 @@ def compute_dp_mask_loss(mask_logits: torch.Tensor, dp_targets:Dict):
     return F.cross_entropy(mask_logits, targets.view(-1))
 
 
-def extract_dp_mask_from_coco_ann(coco_ann, dp_head_output_size: int) -> List[np.array]:
+def extract_dp_mask_from_coco_ann(coco_ann, gt_bbox: Bbox, dt_bbox: Bbox, dp_head_output_size: int) -> List[np.array]:
     """
     Returns categorical mask with classes {0, 1, ... , 14}
     """
+    # First of all, we should detect the intersection between gt_bbox and proposal
+    # And take only those mask information which lies in the intersection
+
     masks = [mask_utils.decode(m) if isinstance(m, dict) else np.zeros((256, 256)) for m in coco_ann['dp_masks']]
-    downsampled = np.array([resize(m.astype(np.float), (dp_head_output_size, dp_head_output_size)) for m in masks])
+
+    # TODO: it feels like this is not the best strategy to project the mask
+    #  because we are loosing some information when resizing several times...
+    gt_bbox = gt_bbox.discretize()
+    masks = [resize(m.astype(float), (gt_bbox.height, gt_bbox.width)) for m in masks]
+    projected = [project_mask(m, gt_bbox, dt_bbox) for m in masks]
+
+    # Resizing to the size of our future output
+    downsampled = np.array([resize(m.astype(np.float), (dp_head_output_size, dp_head_output_size)) for m in projected])
 
     # We are choosing the most probable class in the given pixel after downsampling
     mask = downsampled.argmax(axis=0)
@@ -179,6 +190,33 @@ def extract_dp_mask_from_coco_ann(coco_ann, dp_head_output_size: int) -> List[np
     mask[downsampled.max(axis=0) < 0.5] = 0
 
     return mask
+
+
+def project_mask(mask: np.ndarray, gt: Bbox, dt: Bbox):
+    """Generates mask for dt given the ground truth mask"""
+    gt = gt.discretize()
+    dt = dt.discretize()
+
+    # Intersection of two rectangles is a rectangle
+    # (in our case it cannot be degenerate, because we use IoU threshold for proposals)
+    # The we should just detect proper slices of intersection area in gt and dt bboxes
+    # inter_w = max(0, min(gt.x2 - dt.x2) - max() + 1)
+    intersection = Bbox(
+        max(dt.x1, gt.x1),
+        max(dt.y1, gt.y1),
+        min(dt.x2, gt.x2),
+        min(dt.y2, gt.y2),
+        format='xyxy'
+    )
+    gt_x_slice = slice(intersection.x1 - gt.x1, intersection.x1 - gt.x1 + intersection.width)
+    gt_y_slice = slice(intersection.y1 - gt.y1, intersection.y1 - gt.y1 + intersection.height)
+    dt_x_slice = slice(intersection.x1 - dt.x1, intersection.x1 - dt.x1 + intersection.width)
+    dt_y_slice = slice(intersection.y1 - dt.y1, intersection.y1 - dt.y1 + intersection.height)
+
+    result = np.zeros((dt.height, dt.width))
+    result[dt_y_slice, dt_x_slice] = mask[gt_y_slice, gt_x_slice]
+
+    return result
 
 
 def downsample_mask(mask: np.array, output_size: int, threshold: float=0.5) -> np.array:
