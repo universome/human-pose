@@ -58,18 +58,18 @@ class DensePoseRCNNTrainer(BaseTrainer):
         #                          f'{self.config.data.annotations_dir}/densepose_coco_2014_train.json',
         #                          transform=transforms.ToTensor(),
         #                          target_transform=torchvision_target_format)
-        # val_ds = CocoDetection(f'{self.config.data.coco_dir}/val2014',
-        #                          f'{self.config.data.coco_dir}/densepose_coco_2014_test.json',
-        #                          transform=transforms.ToTensor(),
-        #                          target_transform=torchvision_target_format)
+        val_ds = CocoDetection(f'{self.config.data.coco_dir}/val2014',
+                                 f'{self.config.data.annotations_dir}/densepose_coco_2014_minival.json',
+                                 transform=transforms.ToTensor(),
+                                 target_transform=torchvision_target_format)
         train_ds = CocoDetection(f'{self.config.data.coco_dir}/train2014',
                                f'{self.config.data.annotations_dir}/densepose_coco_2014_tiny.json',
                                transform=transforms.ToTensor(),
                                target_transform=torchvision_target_format)
-        val_ds = CocoDetection(f'{self.config.data.coco_dir}/train2014',
-                                 f'{self.config.data.annotations_dir}/densepose_coco_2014_tiny.json',
-                                 transform=transforms.ToTensor(),
-                                 target_transform=torchvision_target_format)
+        # val_ds = CocoDetection(f'{self.config.data.coco_dir}/train2014',
+        #                          f'{self.config.data.annotations_dir}/densepose_coco_2014_tiny.json',
+        #                          transform=transforms.ToTensor(),
+        #                          target_transform=torchvision_target_format)
 
         self.train_dataloader = DataLoader(train_ds, batch_size=self.config.hp.batch_size, collate_fn=collate_batch)
         self.val_dataloader = DataLoader(val_ds, batch_size=2, collate_fn=collate_batch)

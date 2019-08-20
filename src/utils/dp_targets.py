@@ -130,23 +130,12 @@ def compute_dp_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
     # TODO:
     #   It feels like we should weight losses for different body parts by number of points.
     #   Or we can just average by body part first and than average out all losses
-    # TODO: it feels that bg loss is unnecessary for a patch head
+    # TODO: do we need bg loss for patch head?
 
-    bg_loss = compute_dp_bg_cls_loss(cls_logits, dp_targets)
-    fg_loss = F.cross_entropy(
-        cls_logits.permute(1, 2, 0)[dp_targets['dp_x'], dp_targets['dp_y']],
-        torch.LongTensor(dp_targets['dp_I']).to(cls_logits.device))
+    outputs = cls_logits.permute(1, 2, 0)[dp_targets['dp_x'], dp_targets['dp_y']]
+    targets = torch.LongTensor(dp_targets['dp_I']).to(outputs.device)
 
-    return bg_loss, fg_loss
-
-
-def compute_dp_bg_cls_loss(cls_logits: torch.Tensor, dp_targets: Dict):
-    bg_mask = torch.from_numpy(dp_targets['dp_mask'] == 0).to(cls_logits.device)
-    bg_logits = cls_logits.permute(1, 2, 0)[bg_mask]
-
-    assert bg_logits.size() == (bg_mask.sum(), 25), f"Wrong bg_logits shape: {bg_logits.size()}"
-
-    return F.cross_entropy(bg_logits, torch.zeros(bg_mask.sum()).long().to(bg_logits.device))
+    return F.cross_entropy(outputs, targets)
 
 
 def compute_dp_mask_loss(mask_logits: torch.Tensor, dp_targets:Dict):

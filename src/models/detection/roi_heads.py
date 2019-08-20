@@ -620,18 +620,16 @@ class RoIHeads(torch.nn.Module):
                 'dp_mask_loss': torch.zeros(1, device=dp_cls_logits.device),
             }
 
-        dp_cls_bg_losses, dp_cls_fg_losses = zip(*[
-            compute_dp_cls_loss(x, dp_trg) for x, dp_trg in zip(dp_cls_logits, dp_targets)])
+        dp_cls_losses = [compute_dp_cls_loss(x, dp_trg) for x, dp_trg in zip(dp_cls_logits, dp_targets)]
         dp_u_losses, dp_v_losses = zip(*[compute_dp_uv_loss(x, dp_trg) for x, dp_trg in zip(dp_uv_preds, dp_targets)])
         dp_mask_losses = [compute_dp_mask_loss(x, dp_trg) for x, dp_trg in zip(dp_mask_logits, dp_targets)]
 
-        dp_cls_bg_loss, dp_cls_fg_loss = torch.stack(dp_cls_bg_losses).mean(), torch.stack(dp_cls_fg_losses).mean()
+        dp_cls_loss = torch.stack(dp_cls_losses).mean()
         dp_u_loss, dp_v_loss = torch.stack(dp_u_losses).mean(), torch.stack(dp_v_losses).mean()
         dp_mask_loss = torch.stack(dp_mask_losses).mean()
 
         return {
-            'dp_cls_bg_loss': dp_cls_bg_loss,
-            'dp_cls_fg_loss': dp_cls_fg_loss,
+            'dp_cls_loss': dp_cls_loss,
             'dp_u_loss': dp_u_loss,
             'dp_v_loss': dp_v_loss,
             'dp_mask_loss': dp_mask_loss
