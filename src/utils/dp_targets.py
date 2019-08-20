@@ -93,7 +93,7 @@ def create_target_for_dp(coco_ann: Dict,
         'dp_I': dp_I,
         'dp_x': proposal_dp_x,
         'dp_y': proposal_dp_y,
-        'dp_masks': extract_dp_masks_from_coco_ann(coco_ann, dp_head_output_size),
+        'dp_mask': extract_dp_mask_from_coco_ann(coco_ann, gt_bbox, proposal, dp_head_output_size),
     }
 
 
@@ -130,32 +130,73 @@ def compute_dp_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
     # TODO:
     #   It feels like we should weight losses for different body parts by number of points.
     #   Or we can just average by body part first and than average out all losses
+    # TODO: do we need bg loss for patch head?
 
-    bg_loss = compute_dp_bg_cls_loss(cls_logits, dp_targets)
-    fg_loss = F.cross_entropy(
-        cls_logits.permute(1, 2, 0)[dp_targets['dp_x'], dp_targets['dp_y']],
-        torch.LongTensor(dp_targets['dp_I']).to(cls_logits.device))
+    outputs = cls_logits.permute(1, 2, 0)[dp_targets['dp_x'], dp_targets['dp_y']]
+    targets = torch.LongTensor(dp_targets['dp_I']).to(outputs.device)
 
-    return bg_loss, fg_loss
-
-
-def compute_dp_bg_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
-    bg_mask = torch.Tensor(create_bg_mask_from_dp_masks(dp_targets['dp_masks'])).bool().to(cls_logits.device)
-    bg_logits = cls_logits.permute(1, 2, 0)[bg_mask]
-
-    assert bg_logits.size() == (bg_mask.sum(), 25), f"Wrong bg_logits shape: {bg_logits.size()}"
-
-    return F.cross_entropy(bg_logits, torch.zeros(bg_mask.sum()).long().to(bg_logits.device))
+    return F.cross_entropy(outputs, targets)
 
 
-def extract_dp_masks_from_coco_ann(coco_ann, dp_head_output_size: int) -> List[np.array]:
+def compute_dp_mask_loss(mask_logits: torch.Tensor, dp_targets:Dict):
+    # TODO:
+    #  Here we assume that if dp_masks annotation for some label is absent for an object
+    #  then this body part is not present on an image. It maybe not true and maybe just annotators were lazy
+    # TODO: should we calibrate the losses for bg/fg class? It feels like yes.
+
+    targets = torch.Tensor(dp_targets['dp_mask']).long().to(mask_logits.device)
+    mask_logits = mask_logits.permute(1, 2, 0).view(-1, 15) # [C x W x H] => [W*H x C]
+
+    return F.cross_entropy(mask_logits, targets.view(-1))
+
+
+def extract_dp_mask_from_coco_ann(coco_ann, gt_bbox: Bbox, dt_bbox: Bbox, dp_head_output_size: int) -> List[np.array]:
     """
-    Returns binary masks for each body part
+    Returns categorical mask with classes {0, 1, ... , 14}
     """
+    # First of all, we should detect the intersection between gt_bbox and proposal
+    # And take only those mask information which lies in the intersection
+
     masks = [mask_utils.decode(m) if isinstance(m, dict) else np.zeros((256, 256)) for m in coco_ann['dp_masks']]
-    masks = [downsample_mask(m, dp_head_output_size) for m in masks]
 
-    return np.array(masks)
+    # Converting to class mask (to speed things up)
+    mask = np.array([m * (i + 1) for i, m in enumerate(masks)]).sum(axis=0)
+
+    # TODO: it feels like this is not the best strategy to project the mask
+    #  because we are loosing some information when resizing several times...
+    gt_bbox = gt_bbox.discretize()
+    mask = mask_resize(mask.astype(float), (gt_bbox.height, gt_bbox.width))
+    mask = project_mask(mask, gt_bbox, dt_bbox)
+    mask = mask_resize(mask, (dp_head_output_size, dp_head_output_size))
+
+    return mask
+
+
+def project_mask(mask: np.ndarray, gt: Bbox, dt: Bbox):
+    """Generates mask for dt given the ground truth mask"""
+    gt = gt.discretize()
+    dt = dt.discretize()
+
+    # Intersection of two rectangles is a rectangle
+    # (in our case it cannot be degenerate, because we use IoU threshold for proposals)
+    # The we should just detect proper slices of intersection area in gt and dt bboxes
+    # inter_w = max(0, min(gt.x2 - dt.x2) - max() + 1)
+    intersection = Bbox(
+        max(dt.x1, gt.x1),
+        max(dt.y1, gt.y1),
+        min(dt.x2, gt.x2),
+        min(dt.y2, gt.y2),
+        format='xyxy'
+    )
+    gt_x_slice = slice(intersection.x1 - gt.x1, intersection.x1 - gt.x1 + intersection.width)
+    gt_y_slice = slice(intersection.y1 - gt.y1, intersection.y1 - gt.y1 + intersection.height)
+    dt_x_slice = slice(intersection.x1 - dt.x1, intersection.x1 - dt.x1 + intersection.width)
+    dt_y_slice = slice(intersection.y1 - dt.y1, intersection.y1 - dt.y1 + intersection.height)
+
+    result = np.zeros((dt.height, dt.width))
+    result[dt_y_slice, dt_x_slice] = mask[gt_y_slice, gt_x_slice]
+
+    return result
 
 
 def downsample_mask(mask: np.array, output_size: int, threshold: float=0.5) -> np.array:
@@ -170,3 +211,9 @@ def create_bg_mask_from_dp_masks(dp_masks: np.array):
     assert dp_masks.ndim == 3, f"Expected each mask to be binary"
 
     return (dp_masks.astype(bool).sum(axis=0) - 1).astype(bool)
+
+
+def mask_resize(mask, size):
+    """Resizes mask using nearest neighbor"""
+    return resize(mask, size, order=0, mode='edge', anti_aliasing=False,
+                  anti_aliasing_sigma=None, preserve_range=True)

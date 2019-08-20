@@ -7,14 +7,20 @@ modules:
   models: ["model"]
   optims: ["optim"]
 val_freq_epochs: 1
-
+#val_freq_iters: 10
+val_iou_types: ['uv', 'segm', 'bbox']
+#val_iou_types: ['segm']
 checkpoint:
   freq_iters: 1000
 
-#max_num_iters: 20
+max_num_epochs: 10000
 
 hp:
   dp_head_output_size: 50
+  loss_coefs:
+    dp_cls_loss: 2.
+    dp_u_loss: 2.
+    dp_v_loss: 2.
 
   optim:
     lr: 0.02

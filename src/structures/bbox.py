@@ -6,11 +6,21 @@ from typing import Tuple
 
 
 class Bbox:
-    def __init__(self, x: float, y: float, width: float, height: float):
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
+    def __init__(self, *args, format='xywh'):
+        if format == 'xywh':
+            x, y, w, h = args
+            self.x = x
+            self.y = y
+            self.width = w
+            self.height = h
+        elif format == 'xyxy':
+            x1, y1, x2, y2 = args
+            self.x = x1
+            self.y = y1
+            self.width = x2 - x1
+            self.height = y2 - y1
+        else:
+            raise NotImplementedError
 
     @classmethod
     def from_coco_ann(cls, coco_ann):
@@ -24,6 +34,22 @@ class Bbox:
         assert y_max >= y_min
 
         return Bbox(x_min, y_min, x_max - x_min, y_max - y_min)
+
+    @property
+    def x1(self):
+        return self.x
+
+    @property
+    def y1(self):
+        return self.y
+
+    @property
+    def x2(self):
+        return self.x + self.width
+
+    @property
+    def y2(self):
+        return self.y + self.height
 
     def discretize(self) -> "Bbox":
         # TODO: it feels like using `round` instead of `int` is better, because it is not that rough
