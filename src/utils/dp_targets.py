@@ -132,7 +132,7 @@ def compute_dp_cls_loss(cls_logits: torch.LongTensor, dp_targets: Dict):
     #   Or we can just average by body part first and than average out all losses
     # TODO: do we need bg loss for patch head?
 
-    outputs = cls_logits.permute(1, 2, 0)[dp_targets['dp_x'], dp_targets['dp_y']]
+    outputs = cls_logits.permute(1, 2, 0)[dp_targets['dp_y'], dp_targets['dp_x']]
     targets = torch.LongTensor(dp_targets['dp_I']).to(outputs.device)
 
     return F.cross_entropy(outputs, targets)
