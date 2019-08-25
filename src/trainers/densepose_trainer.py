@@ -59,7 +59,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
                                  transform=transforms.ToTensor(),
                                  target_transform=torchvision_target_format)
         val_ds = CocoDetection(f'{self.config.data.coco_dir}/val2014',
-                                 f'{self.config.data.annotations_dir}/densepose_coco_2014_minival.json',
+                                 f'{self.config.data.annotations_dir}/densepose_coco_2014_valminusminival.json',
                                  transform=transforms.ToTensor(),
                                  target_transform=torchvision_target_format)
         # train_ds = CocoDetection(f'{self.config.data.coco_dir}/train2014',
@@ -86,18 +86,19 @@ class DensePoseRCNNTrainer(BaseTrainer):
 
         self.model.train()
 
-        with torch.autograd.detect_anomaly():
-            losses = self.model(images, targets)
-            coefs = [self.config.hp.get(f'loss_coefs.{loss_name}', 1) for loss_name in losses]
-            total_loss = sum(c * l for c, l in zip(coefs, losses.values()))
+        losses = self.model(images, targets)
+        coefs = [self.config.hp.get(f'loss_coefs.{loss_name}', 1) for loss_name in losses]
+        total_loss = sum(c * l for c, l in zip(coefs, losses.values()))
+        total_loss.backward()
 
-            self.optim.zero_grad()
-            total_loss.backward()
+        if self.num_iters_done % self.config.hp.get('grad_accum', 1) == 0:
             grad_norm = clip_grad_norm_(self.model.parameters(), self.config.hp.grad_clip_norm_value)
-            self.optim.step()
-            # self.lr_scheduler.step()
 
-        self.writer.add_scalar(f'Grad_norm', grad_norm, self.num_iters_done)
+            self.optim.step()
+            self.optim.zero_grad()
+
+            self.writer.add_scalar(f'Grad_norm', grad_norm, self.num_iters_done)
+
         for loss_name in losses:
             self.writer.add_scalar(f'Train/{loss_name}', losses[loss_name].item(), self.num_iters_done)
         self.writer.add_scalar(f'Train/total_loss', total_loss.item(), self.num_iters_done)

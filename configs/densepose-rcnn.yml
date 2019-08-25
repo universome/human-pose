@@ -22,6 +22,7 @@ hp:
     dp_u_loss: 0.1
     dp_v_loss: 0.1
     dp_mask_loss: 2.0
+  grad_accum: 12
 
   optim:
     lr: 0.02
