@@ -6,14 +6,18 @@ data:
 modules:
   models: ["model"]
   optims: ["optim"]
-val_freq_epochs: 1
+val_freq_epochs: 10
 #val_freq_iters: 10
 val_iou_types: ['uv', 'segm', 'bbox']
-#val_iou_types: ['segm']
 checkpoint:
-  freq_iters: 1000
+  freq_epochs: 1
 
 max_num_epochs: 10000
+is_distributed: true
+distributed_backend: "gloo"
+load_checkpoint:
+  model: "checkpoints/model-118000.pt"
+  optim: "checkpoints/optim-118000.pt"
 
 hp:
   dp_head_output_size: 50
@@ -22,7 +26,9 @@ hp:
     dp_u_loss: 0.1
     dp_v_loss: 0.1
     dp_mask_loss: 2.0
-  grad_accum: 12
+
+  grad_accum: 2
+  batch_size: 2
 
   optim:
     lr: 0.02
@@ -30,7 +36,6 @@ hp:
     weight_decay: 0.0001
 
   grad_clip_norm_value: 100
-  batch_size: 2
   model_config:
     min_size: 800
     max_size: 1333

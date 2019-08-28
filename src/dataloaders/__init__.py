@@ -1,5 +1,5 @@
-from .coco_dataloader import COCODataloader
+from .coco import CocoDetection
 
 __all__ = [
-    "COCODataloader",
+    "CocoDetection",
 ]

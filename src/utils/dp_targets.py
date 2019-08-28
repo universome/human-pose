@@ -1,10 +1,13 @@
+import io
 from typing import List, Dict
+import base64
 
 import torch
 import torch.nn.functional as F
 import numpy as np
 from skimage.transform import resize
 from pycocotools import mask as mask_utils
+from PIL import Image
 
 from src.structures.bbox import Bbox
 
@@ -217,3 +220,24 @@ def mask_resize(mask, size):
     """Resizes mask using nearest neighbor"""
     return resize(mask, size, order=0, mode='edge', anti_aliasing=False,
                   anti_aliasing_sigma=None, preserve_range=True)
+
+
+def _encodePngData(arr):
+    """
+    Encode array data as a PNG image using the highest compression rate
+    @param arr [in] Data stored in an array of size (3, M, N) of type uint8
+    @return Base64-encoded string containing PNG-compressed data
+    """
+    assert len(arr.shape) == 3, "Expected a 3D array as an input," \
+            " got a {0}D array".format(len(arr.shape))
+    assert arr.shape[0] == 3, "Expected first array dimension of size 3," \
+            " got {0}".format(arr.shape[0])
+    assert arr.dtype == np.uint8, "Expected an array of type np.uint8, " \
+            " got {0}".format(arr.dtype)
+    data = np.moveaxis(arr, 0, -1)
+    im = Image.fromarray(data)
+    fStream = io.BytesIO()
+    im.save(fStream, format='png', optimize=True)
+    s = fStream.getvalue()
+    # return s.encode('base64')
+    return base64.b64encode(s).decode('utf-8')
