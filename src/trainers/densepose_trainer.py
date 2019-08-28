@@ -15,6 +15,7 @@ from src.utils.comm import reduce_loss_dict, synchronize, all_gather, is_main_pr
 from src.structures.bbox import Bbox
 from src.dataloaders.construct import construct_dataloader
 from src.dataloaders.utils import batch_to
+from src.utils.training_utils import load_model_state
 
 
 class DensePoseRCNNTrainer(BaseTrainer):
@@ -32,7 +33,8 @@ class DensePoseRCNNTrainer(BaseTrainer):
         self.model = DensePoseRCNN(backbone, num_maskrcnn_classes=2, box_detections_per_img=20)
 
         if self.config.has('load_checkpoint.model'):
-            self.model.load_state_dict(torch.load(self.config.load_checkpoint.model, map_location=self.device_name))
+            model_state = load_model_state(self.config.load_checkpoint.model, self.device_name)
+            self.model.load_state_dict(model_state)
 
         self.model = self.model.to(self.device_name)
 
