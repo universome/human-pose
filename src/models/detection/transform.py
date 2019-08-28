@@ -1,5 +1,7 @@
 import random
 import math
+from typing import List
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -113,6 +115,8 @@ class GeneralizedRCNNTransform(nn.Module):
         for i, (pred, im_s, o_im_s) in enumerate(zip(result, image_shapes, original_image_sizes)):
             boxes = pred["boxes"]
             boxes = resize_boxes(boxes, im_s, o_im_s)
+            boxes = filter_empty_boxes(boxes)
+
             result[i]["boxes"] = boxes
             if "masks" in pred:
                 masks = pred["masks"]
@@ -127,6 +131,19 @@ class GeneralizedRCNNTransform(nn.Module):
                     postprocess_dp_predictions(pred["dp_cls_logits"], pred["dp_uv_coords"], pred['dp_mask_logits'], boxes)
 
         return result
+
+
+def filter_empty_boxes(bboxes:torch.Tensor) -> torch.Tensor:
+    result = [b for b in bboxes if not is_box_empty(b)]
+
+    if len(result) > 0:
+        return torch.stack(result)
+    else:
+        return torch.empty(0)
+
+
+def is_box_empty(bbox:torch.Tensor) -> bool:
+    return (bbox[2] - bbox[0]).int().item() <= 0 or (bbox[3] - bbox[1]).int().item() <= 0
 
 
 def resize_keypoints(keypoints, original_size, new_size):
