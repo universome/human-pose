@@ -263,6 +263,9 @@ def keypointrcnn_inference(x, boxes):
 # but are kept here for the moment while we need them
 # temporarily for paste_mask_in_image
 def expand_boxes(boxes, scale):
+    if len(boxes) == 0:
+        return torch.empty(0).to(boxes.device)
+
     w_half = (boxes[:, 2] - boxes[:, 0]) * .5
     h_half = (boxes[:, 3] - boxes[:, 1]) * .5
     x_c = (boxes[:, 2] + boxes[:, 0]) * .5
@@ -276,6 +279,7 @@ def expand_boxes(boxes, scale):
     boxes_exp[:, 2] = x_c + w_half
     boxes_exp[:, 1] = y_c - h_half
     boxes_exp[:, 3] = y_c + h_half
+
     return boxes_exp
 
 
