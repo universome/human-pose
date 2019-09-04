@@ -6,15 +6,18 @@ import torch.nn as nn
 import numpy as np
 from firelab import BaseTrainer
 from torch.nn.utils.clip_grad import clip_grad_norm_
+from tqdm import tqdm
 
 from src.models.detection.backbone_utils import resnet_fpn_backbone
 from src.models import DensePoseRCNN
+from src.optims.warmup_scheduler import WarmupScheduler
 from src.utils.densepose_cocoeval import denseposeCOCOeval
 from src.utils.dp_targets import _encodePngData
 from src.utils.comm import reduce_loss_dict, synchronize, all_gather, is_main_process
 from src.structures.bbox import Bbox
 from src.dataloaders.construct import construct_dataloader
 from src.dataloaders.utils import batch_to
+from src.utils.training_utils import load_model_state
 
 
 class DensePoseRCNNTrainer(BaseTrainer):
@@ -32,7 +35,8 @@ class DensePoseRCNNTrainer(BaseTrainer):
         self.model = DensePoseRCNN(backbone, num_maskrcnn_classes=2, box_detections_per_img=20)
 
         if self.config.has('load_checkpoint.model'):
-            self.model.load_state_dict(torch.load(self.config.load_checkpoint.model, map_location=self.device_name))
+            model_state = load_model_state(self.config.load_checkpoint.model, self.device_name)
+            self.model.load_state_dict(model_state)
 
         self.model = self.model.to(self.device_name)
 
@@ -45,10 +49,27 @@ class DensePoseRCNNTrainer(BaseTrainer):
         self.val_dataloader = construct_dataloader(self.config, False, self.is_distributed, False)
 
     def init_optimizers(self):
-        # TODO: lr scheduling
-        self.optim = torch.optim.Adam(self.model.parameters(), lr=1e-4)
-        # self.optim = torch.optim.SGD(self.model.parameters(), **self.config.hp.optim.to_dict())
-        # self.lr_scheduler = torch.optim.lr_scheduler.CyclicLR(self.optim, 1e-6, 1e-2)
+        if self.config.hp.optim.type == 'adam':
+            self.optim = torch.optim.Adam(self.model.parameters(), **self.config.hp.optim.kwargs.to_dict())
+        elif self.config.hp.optim.type == 'sgd':
+            self.optim = torch.optim.SGD(self.model.parameters(), **self.config.hp.optim.kwargs.to_dict())
+        else:
+            raise NotImplementedError(f'Unknown optimizer: {self.config.hp.optim.type }')
+
+        if self.config.hp.optim.get('lr_scheduler.type') == 'cyclic_lr':
+            self.lr_scheduler = torch.optim.lr_scheduler.CyclicLR(
+                self.optim, **self.config.hp.optim.lr_scheduler.kwargs.to_dict())
+        elif self.config.hp.optim.get('lr_scheduler.type') == 'multi_step_lr':
+            self.lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+                self.optim, **self.config.hp.optim.lr_scheduler.kwargs.to_dict())
+        else:
+            raise NotImplementedError(f'Unknown scheduler: {self.config.hp.optim.get("lr_scheduler.type")}')
+
+        if self.config.hp.optim.has('warmup_scheduler'):
+            self.is_warmup_enabled = True
+            self.warmup_scheduler = WarmupScheduler(self.optim, **self.config.hp.optim.warmup_scheduler.to_dict())
+        else:
+            self.is_warmup_enabled = False
 
         if self.config.has('load_checkpoint.optim'):
             self.optim.load_state_dict(torch.load(self.config.load_checkpoint.optim, map_location=self.device_name))
@@ -63,15 +84,23 @@ class DensePoseRCNNTrainer(BaseTrainer):
         total_loss = sum(c * l for c, l in zip(coefs, losses.values()))
 
         if (self.num_iters_done + 1) % self.config.hp.get('grad_accum', 1) == 0:
-            # Run with synchronization (done automatically during backward)
-            total_loss.backward()
+            # Run with synchronization (performed automatically during backward)
+            total_loss_accumulated = total_loss / self.config.hp.get('grad_accum', 1)
+            total_loss_accumulated.backward()
 
             grad_norm = clip_grad_norm_(self.model.parameters(), self.config.hp.grad_clip_norm_value)
 
             self.optim.step()
+
+            if self.is_warmup_enabled and self.num_iters_done <= self.warmup_scheduler.num_warmup_iters:
+                self.warmup_scheduler.step()
+            else:
+                self.lr_scheduler.step()
+
             self.optim.zero_grad()
 
-            self.write_scalar(f'Grad_norm', grad_norm, self.num_iters_done)
+            self.write_scalar(f'Stats/Grad_norm', grad_norm, self.num_iters_done)
+            self.write_scalar(f'Stats/LR', self.optim.param_groups[0]['lr'], self.num_iters_done)
         else:
             # Run without synchronization
             if self.is_distributed:
@@ -141,8 +170,10 @@ class DensePoseRCNNTrainer(BaseTrainer):
     def run_inference(self, dataloader):
         results = []
 
+        print('Running inference...')
+
         with torch.no_grad():
-            for images, targets in dataloader:
+            for images, targets in tqdm(dataloader):
                 preds = self.model([img.to(self.device_name) for img in images])
 
                 for img_idx in range(len(images)):

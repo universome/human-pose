@@ -10,7 +10,7 @@ from PIL import Image
 
 class CocoDetection(VisionDataset):
     """
-        It's similar to CocoDetection dataset, but filters out images without objects
+    It's similar to CocoDetection dataset, but filters out images without objects
     """
     def __init__(self, root, annFile,
                  transform=None,

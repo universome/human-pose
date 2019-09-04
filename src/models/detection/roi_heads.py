@@ -8,7 +8,7 @@ from torchvision.ops import misc as misc_nn_ops
 from torchvision.ops import roi_align
 
 from src.structures.bbox import Bbox
-from src.utils.dp_targets import  create_target_for_dp, compute_dp_cls_loss, compute_dp_uv_loss, compute_dp_mask_loss
+from src.utils.dp_targets import  create_targets_for_dp_heads, compute_dp_cls_loss, compute_dp_uv_loss, compute_dp_mask_loss
 from . import _utils as det_utils
 
 
@@ -585,14 +585,14 @@ class RoIHeads(torch.nn.Module):
         dp_features = self.densepose_roi_pool(features, dp_proposals, image_shapes)
 
         # Flattening out our data
-        coco_anns_flat = [targets[img_i]['coco_anns'][pos_matched_idxs[img_i][p_i]] for img_i, obj_idx in enumerate(pos_matched_idxs) for p_i in range(len(obj_idx))]
+        dp_anns_flat = [targets[img_i]['dp_anns'][pos_matched_idxs[img_i][p_i]] for img_i, obj_idx in enumerate(pos_matched_idxs) for p_i in range(len(obj_idx))]
         gt_bboxes_flat = [targets[img_i]['boxes'][pos_matched_idxs[img_i][p_i]] for img_i, obj_idx in enumerate(pos_matched_idxs) for p_i in range(len(obj_idx))]
         dp_proposals = [p for ps in dp_proposals for p in ps]
         pos_matched_idxs = [(img_i, bb_i) for img_i, bbox_idxs in enumerate(pos_matched_idxs) for bb_i in bbox_idxs]
 
         # Filtering out those proposals, which correspond to objects that do not have densepose annotation
         # TODO: there are annotations with dp_masks but without dp_I/dp_U/dp_V, but we ignore them, which is not good
-        has_dp = lambda i: ('dp_I' in coco_anns_flat[i] and len(coco_anns_flat[i]['dp_I']) > 0)
+        has_dp = lambda i: (not dp_anns_flat[i] is None and len(dp_anns_flat[i]['dp_I']) > 0)
         gt_bboxes_flat = [bb for i, bb in enumerate(gt_bboxes_flat) if has_dp(i)]
         dp_features = torch.stack([f for i, f in enumerate(dp_features) if has_dp(i)])
         dp_proposals = [p for i, p in enumerate(dp_proposals) if has_dp(i)]
@@ -608,7 +608,7 @@ class RoIHeads(torch.nn.Module):
         gt_bboxes_flat = [Bbox.from_torch_tensor(bb) for bb in gt_bboxes_flat]
 
         dp_head_output_size = dp_cls_logits.size(-1)
-        dp_targets = [create_target_for_dp(targets[img_idx]['coco_anns'][bbox_idx], gt_bbox, proposal, dp_head_output_size) \
+        dp_targets = [create_targets_for_dp_heads(targets[img_idx]['dp_anns'][bbox_idx], gt_bbox, proposal, dp_head_output_size) \
                         for (img_idx, bbox_idx), gt_bbox, proposal in zip(pos_matched_idxs, gt_bboxes_flat, dp_proposals)]
 
         # TODO: one should better compute targets, then filter them and then compute predictions
