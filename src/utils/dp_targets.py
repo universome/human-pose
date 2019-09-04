@@ -12,7 +12,7 @@ from PIL import Image
 from src.structures.bbox import Bbox
 
 
-def create_target_for_dp(coco_ann: Dict,
+def create_targets_for_dp_heads(dp_ann: Dict,
                          gt_bbox: Bbox,
                          proposal: Bbox,
                          dp_head_output_size: int):
@@ -46,8 +46,8 @@ def create_target_for_dp(coco_ann: Dict,
     # and leave only the pixels which lie in this intersection
 
     # Compute coordinates in the coordinate system where (0,0) is the whole image left upper corner
-    img_dp_x = gt_bbox.x + np.array(coco_ann['dp_x']) / 256 * gt_bbox.width
-    img_dp_y = gt_bbox.y + np.array(coco_ann['dp_y']) / 256 * gt_bbox.height
+    img_dp_x = gt_bbox.x + np.array(dp_ann['dp_x']) / 256 * gt_bbox.width
+    img_dp_y = gt_bbox.y + np.array(dp_ann['dp_y']) / 256 * gt_bbox.height
 
     # Compute coordinates in the coordinate system where (0,0) is proposal bbox left upper corner
     proposal_dp_x = img_dp_x - proposal.x
@@ -61,9 +61,9 @@ def create_target_for_dp(coco_ann: Dict,
 
     proposal_dp_x = proposal_dp_x[~out_of_proposal_mask]
     proposal_dp_y = proposal_dp_y[~out_of_proposal_mask]
-    dp_U = np.array(coco_ann['dp_U'])[~out_of_proposal_mask]
-    dp_V = np.array(coco_ann['dp_V'])[~out_of_proposal_mask]
-    dp_I = np.array(coco_ann['dp_I'])[~out_of_proposal_mask]
+    dp_U = np.array(dp_ann['dp_U'])[~out_of_proposal_mask]
+    dp_V = np.array(dp_ann['dp_V'])[~out_of_proposal_mask]
+    dp_I = np.array(dp_ann['dp_I'])[~out_of_proposal_mask]
 
     # We should to rescale the pixels in such a way
     # that it fits to model output size
@@ -96,7 +96,7 @@ def create_target_for_dp(coco_ann: Dict,
         'dp_I': dp_I,
         'dp_x': proposal_dp_x,
         'dp_y': proposal_dp_y,
-        'dp_mask': extract_dp_mask_from_coco_ann(coco_ann, gt_bbox, proposal, dp_head_output_size),
+        'dp_mask': generate_target_from_dp_mask(dp_ann['dp_mask'], gt_bbox, proposal, dp_head_output_size),
     }
 
 
@@ -153,23 +153,33 @@ def compute_dp_mask_loss(mask_logits: torch.Tensor, dp_targets:Dict):
     return F.cross_entropy(mask_logits, targets.view(-1))
 
 
-def extract_dp_mask_from_coco_ann(coco_ann, gt_bbox: Bbox, dt_bbox: Bbox, dp_head_output_size: int) -> List[np.array]:
+def combine_dp_masks(dp_masks:List[np.ndarray]) -> np.ndarray:
     """
-    Returns categorical mask with classes {0, 1, ... , 14}
+    Takes raw dp_masks from coco_ann and converts them into 2d numpy array
     """
-    # First of all, we should detect the intersection between gt_bbox and proposal
+    assert len(dp_masks) == 14 # There are only 14 body parts
+
+    masks = [mask_utils.decode(m) if isinstance(m, dict) else np.zeros((256, 256)) for m in dp_masks]
+
+    # We assume here that there are no intersections in these 14 masks
+    mask = np.array([m * (i + 1) for i, m in enumerate(masks)]).sum(axis=0)
+
+    return mask
+
+
+def generate_target_from_dp_mask(mask:np.ndarray, gt_bbox: Bbox, dt_bbox: Bbox, dp_head_output_size: int) -> np.ndarray:
+    # We should detect the intersection between gt_bbox and proposal
     # And take only those mask information which lies in the intersection
 
-    masks = [mask_utils.decode(m) if isinstance(m, dict) else np.zeros((256, 256)) for m in coco_ann['dp_masks']]
-
-    # Converting to class mask (to speed things up)
-    mask = np.array([m * (i + 1) for i, m in enumerate(masks)]).sum(axis=0)
+    assert mask.ndim == 2
+    assert mask.shape[0] == mask.shape[1] == 256
 
     # TODO: it feels like this is not the best strategy to project the mask
     #  because we are loosing some information when resizing several times...
     gt_bbox = gt_bbox.discretize()
-    mask = mask_resize(mask.astype(float), (gt_bbox.height, gt_bbox.width))
-    mask = project_mask(mask, gt_bbox, dt_bbox)
+
+    mask = mask_resize(mask.astype(float), (gt_bbox.height, gt_bbox.width)) # Resizing to its true size
+    mask = project_mask(mask, gt_bbox, dt_bbox) # Projecting on proposals
     mask = mask_resize(mask, (dp_head_output_size, dp_head_output_size))
 
     return mask

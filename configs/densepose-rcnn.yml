@@ -16,9 +16,9 @@ max_num_epochs: 300
 is_distributed: true
 distributed_backend: "gloo"
 distributed_timeout: 7200 # Increase timeout, cause validation takes a lot
-#load_checkpoint:
-#  model: "experiments/experiment-00002/checkpoints/model-2204.pt"
-#  optim: "experiments/experiment-00002/checkpoints/optim-2204.pt"
+load_checkpoint:
+  model: "experiments/experiment-00026/checkpoints/model-82625.pt"
+  optim: "experiments/experiment-00026/checkpoints/optim-82625.pt"
 
 hp:
   dp_head_output_size: 50

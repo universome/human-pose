@@ -31,7 +31,7 @@ def run_trainer(args:Dict):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Training the model',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-g', '--gpus', default=[0,1,3,4], type=int, nargs='+',
+    parser.add_argument('-g', '--gpus', default=[0,1,2,3], type=int, nargs='+',
                         help='Which GPUs I should use (among those that are visible to me)')
     parser.add_argument('-d', '--experiments_dir', default='experiments', type=str,
                         help='Directory where to save checkpoints/logs/etc')

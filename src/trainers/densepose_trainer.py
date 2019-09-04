@@ -6,6 +6,7 @@ import torch.nn as nn
 import numpy as np
 from firelab import BaseTrainer
 from torch.nn.utils.clip_grad import clip_grad_norm_
+from tqdm import tqdm
 
 from src.models.detection.backbone_utils import resnet_fpn_backbone
 from src.models import DensePoseRCNN
@@ -31,7 +32,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
     def init_models(self):
         # backbone = mobilenet_v2(pretrained=True)
         backbone = resnet_fpn_backbone('resnet50', pretrained=True)
-        self.model = DensePoseRCNN(backbone, num_maskrcnn_classes=2, box_detections_per_img=10)
+        self.model = DensePoseRCNN(backbone, num_maskrcnn_classes=2, box_detections_per_img=20)
 
         if self.config.has('load_checkpoint.model'):
             model_state = load_model_state(self.config.load_checkpoint.model, self.device_name)
@@ -169,8 +170,10 @@ class DensePoseRCNNTrainer(BaseTrainer):
     def run_inference(self, dataloader):
         results = []
 
+        print('Running inference...')
+
         with torch.no_grad():
-            for images, targets in dataloader:
+            for images, targets in tqdm(dataloader):
                 preds = self.model([img.to(self.device_name) for img in images])
 
                 for img_idx in range(len(images)):
