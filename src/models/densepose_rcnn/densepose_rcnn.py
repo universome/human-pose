@@ -1,16 +1,15 @@
 from torch import nn
 from torchvision.ops import misc as misc_nn_ops
 from torchvision.ops import MultiScaleRoIAlign
-from src.models.detection.mask_rcnn import MaskRCNNHeads, MaskRCNNPredictor
+from src.models.detection.mask_rcnn import MaskRCNNHeads
 from src.models.detection.faster_rcnn import FasterRCNN
-from src.models.detection.mask_rcnn import MaskRCNN
 
 __all__ = [
     "DensePoseRCNN"
 ]
 
 
-class DensePoseRCNN(MaskRCNN):
+class DensePoseRCNN(FasterRCNN):
     def __init__(self, backbone, num_maskrcnn_classes=None,
                  # transform parameters
                  min_size=800, max_size=1333,

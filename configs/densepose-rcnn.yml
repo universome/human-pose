@@ -35,7 +35,7 @@ hp:
     dp_mask_loss: 2.0
 
   grad_accum: 2
-  batch_size: 2
+  batch_size: 3
 
   grad_clip_norm_value: 5
   model_config:
