@@ -12,7 +12,16 @@ def construct_transforms(train:bool=True) -> Callable:
     if train:
         augmentations = [
             ConvertBatchTarget(),
-            AlbuTransformWrapper(HorizontalFlipWithDP(p=0.5)),
+            AlbuTransformWrapper(
+                A.Compose([
+                    HorizontalFlipWithDP(p=0.5)
+                ], bbox_params={
+                    'format': 'pascal_voc',
+                    'min_area': 0.,
+                    'min_visibility': 0.,
+                    'label_fields': ['labels']
+                })
+            ),
             ToTensors(),
         ]
     else:
@@ -36,7 +45,7 @@ class HorizontalFlipWithDP(A.HorizontalFlip):
 
 
 
-class ConvertBatchTarget(A.DualTransform):
+class ConvertBatchTarget:
     def __call__(self, image, target):
         return image, torchvision_target_format(target)
 
@@ -76,7 +85,7 @@ class AlbuTransformWrapper:
         albu_input = {
             'image': np.array(image),
             'labels': target['labels'],
-            'boxes': target['boxes'],
+            'bboxes': target['boxes'],
             'masks': target['masks'],
             'dp_anns': target['dp_anns']
         }
@@ -86,7 +95,7 @@ class AlbuTransformWrapper:
         return albu_result['image'], {
             'image_id': target['image_id'],
             'labels': albu_result['labels'],
-            'boxes': albu_result['boxes'],
+            'boxes': albu_result['bboxes'],
             'masks': albu_result['masks'],
             'dp_anns': albu_result['dp_anns'],
         }

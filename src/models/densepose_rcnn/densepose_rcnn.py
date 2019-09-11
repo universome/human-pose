@@ -1,7 +1,9 @@
 from torch import nn
 from torchvision.ops import misc as misc_nn_ops
 from torchvision.ops import MultiScaleRoIAlign
-from src.models.detection.mask_rcnn import MaskRCNN, MaskRCNNHeads, MaskRCNNPredictor
+from src.models.detection.mask_rcnn import MaskRCNNHeads, MaskRCNNPredictor
+from src.models.detection.faster_rcnn import FasterRCNN
+from src.models.detection.mask_rcnn import MaskRCNN
 
 __all__ = [
     "DensePoseRCNN"
@@ -25,9 +27,7 @@ class DensePoseRCNN(MaskRCNN):
                  box_score_thresh=0.05, box_nms_thresh=0.5, box_detections_per_img=100,
                  box_fg_iou_thresh=0.5, box_bg_iou_thresh=0.5,
                  box_batch_size_per_image=512, box_positive_fraction=0.25,
-                 bbox_reg_weights=None,
-                 # Mask parameters
-                 mask_roi_pool=None, mask_head=None, mask_predictor=None):
+                 bbox_reg_weights=None):
 
         super(DensePoseRCNN, self).__init__(
             backbone, num_maskrcnn_classes,
@@ -46,8 +46,7 @@ class DensePoseRCNN(MaskRCNN):
             box_score_thresh, box_nms_thresh, box_detections_per_img,
             box_fg_iou_thresh, box_bg_iou_thresh,
             box_batch_size_per_image, box_positive_fraction,
-            bbox_reg_weights,
-            mask_roi_pool, mask_head, mask_predictor)
+            bbox_reg_weights)
 
         self.roi_heads.densepose_roi_pool = MultiScaleRoIAlign(
             featmap_names=[0, 1, 2, 3],

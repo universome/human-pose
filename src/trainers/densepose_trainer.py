@@ -56,7 +56,9 @@ class DensePoseRCNNTrainer(BaseTrainer):
         else:
             raise NotImplementedError(f'Unknown optimizer: {self.config.hp.optim.type }')
 
-        if self.config.hp.optim.get('lr_scheduler.type') == 'cyclic_lr':
+        if not self.config.hp.optim.has('lr_scheduler'):
+            self.lr_scheduler = None
+        elif self.config.hp.optim.get('lr_scheduler.type') == 'cyclic_lr':
             self.lr_scheduler = torch.optim.lr_scheduler.CyclicLR(
                 self.optim, **self.config.hp.optim.lr_scheduler.kwargs.to_dict())
         elif self.config.hp.optim.get('lr_scheduler.type') == 'multi_step_lr':
@@ -94,8 +96,10 @@ class DensePoseRCNNTrainer(BaseTrainer):
 
             if self.is_warmup_enabled and self.num_iters_done <= self.warmup_scheduler.num_warmup_iters:
                 self.warmup_scheduler.step()
-            else:
+            elif not self.lr_scheduler is None:
                 self.lr_scheduler.step()
+            else:
+                pass
 
             self.optim.zero_grad()
 
