@@ -60,3 +60,4 @@ If you want to run on GPU you should additionally provide `--available_gpus` arg
 * Maybe DeepLabV3 didn't work for authors because they didn't care enough about class imbalance (use something like Focal Loss)?
 * Maybe our bbox head should be of size Kx4, where K is number of classes? This can help the model to differentiate. But actually we do almost the same by using different anchor sizes, i.e. outputting Ax4.
 * Maybe we should also initialize DP heads properly?
+* Total variation regularizer

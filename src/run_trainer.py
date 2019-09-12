@@ -4,12 +4,12 @@ from typing import Dict
 import sys; sys.path.append('.')
 from src.trainers.maskrcnn_trainer import MaskRCNNTrainer
 from src.trainers.densepose_trainer import DensePoseRCNNTrainer
-from firelab.utils.fs_utils import load_config
+from firelab.config import Config
 
 
 def run_trainer(args:Dict):
     # TODO: read some staff from command line and overwrite config
-    config = load_config('configs/densepose-rcnn.yml')
+    config = Config.load('configs/densepose-rcnn.yml')
 
     if not args.get('local_rank') is None:
         config.set('gpus', [args['local_rank']])

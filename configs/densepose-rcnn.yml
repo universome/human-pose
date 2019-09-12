@@ -22,6 +22,7 @@ max_num_epochs: 300
 is_distributed: true
 distributed_backend: "gloo"
 distributed_timeout: 7200 # Increase timeout, cause validation takes a lot
+should_ignore_oom_batches: true
 #load_checkpoint:
 #  model: "experiments/experiment-00026/checkpoints/model-82625.pt"
 #  optim: "experiments/experiment-00026/checkpoints/optim-82625.pt"
@@ -34,26 +35,31 @@ hp:
     dp_v_loss: 0.1
     dp_mask_loss: 2.0
 
-  grad_accum: 2
-  batch_size: 3
+  grad_accum: 3
+  batch_size: 2
 
-  grad_clip_norm_value: 5
+  grad_clip_norm_value: 1000
   model_config:
     min_size: 800
     max_size: 1333
 
+#  optim:
+#    type: 'sgd'
+#    kwargs:
+#      lr: 0.001 # LR of 0.001 was chosen for 4 GPUs. Adjust accordingly
+#      weight_decay: 0.0001
+#      momentum: 0.9
+#    lr_scheduler:
+#      type: 'multi_step_lr'
+#      kwargs:
+#        milestones: [120000, 160000]
+#        gamma: 0.1
+#    warmup_scheduler:
+#      lr: 0.001 # LR of 0.001 was chosen for 4 GPUs. Adjust accordingly
+#      num_warmup_iters: 1000
+#      warmup_factor: 0.1
   optim:
     type: 'sgd'
     kwargs:
-      lr: 0.001 # LR of 0.001 was chosen for 4 GPUs. Adjust accordingly
+      lr: 0.0001
       weight_decay: 0.0001
-      momentum: 0.9
-    lr_scheduler:
-      type: 'multi_step_lr'
-      kwargs:
-        milestones: [120000, 160000]
-        gamma: 0.1
-    warmup_scheduler:
-      lr: 0.001 # LR of 0.001 was chosen for 4 GPUs. Adjust accordingly
-      num_warmup_iters: 1000
-      warmup_factor: 0.1
