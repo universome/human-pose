@@ -45,8 +45,10 @@ class DensePoseRCNNTrainer(BaseTrainer):
                 self.model, device_ids=self.gpus, output_device=self.gpus[0])
 
     def init_dataloaders(self):
-        self.train_dataloader = construct_dataloader(self.config, True, self.is_distributed, True)
-        self.val_dataloader = construct_dataloader(self.config, False, self.is_distributed, False)
+        self.train_dataloader = construct_dataloader(
+            self.config, is_train=True, is_distributed=self.is_distributed, shuffle=False)
+        self.val_dataloader = construct_dataloader(
+            self.config, is_train=False, is_distributed=self.is_distributed, shuffle=False)
 
     def init_optimizers(self):
         if self.config.hp.optim.type == 'adam':
@@ -67,7 +69,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
         else:
             raise NotImplementedError(f'Unknown scheduler: {self.config.hp.optim.get("lr_scheduler.type")}')
 
-        if self.config.hp.optim.has('warmup_scheduler'):
+        if self.config.has('hp.optim.warmup_scheduler'):
             self.is_warmup_enabled = True
             self.warmup_scheduler = WarmupScheduler(self.optim, **self.config.hp.optim.warmup_scheduler.to_dict())
         else:
@@ -106,12 +108,13 @@ class DensePoseRCNNTrainer(BaseTrainer):
             self.write_scalar(f'Stats/Grad_norm', grad_norm, self.num_iters_done)
             self.write_scalar(f'Stats/LR', self.optim.param_groups[0]['lr'], self.num_iters_done)
         else:
-            # Run without synchronization
             if self.is_distributed:
+                # Run without synchronization
                 with self.model.no_sync():
                     total_loss.backward()
 
-                # TODO: does not this sync? Is it possible to log sensible values without syncing then?
+                # Recompute total_loss for logging purposes
+                # TODO: does not this sync? Maybe we should log values without syncing?
                 losses = reduce_loss_dict(losses)
                 total_loss = sum(c * l for c, l in zip(coefs, losses.values()))
             else:

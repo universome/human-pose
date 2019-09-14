@@ -51,7 +51,7 @@ If you want to run on GPU you should additionally provide `--available_gpus` arg
 * Why don't we use skip-connections in Mask R-CNN like we do in U-net? They should help model to predict the mask.
 * Can we replace RoIAlign with attention? For example, we can predict attention weights instead of predicting bboxes for each sliding window over features.
 * What if we train object detector to predict from bottom to top, from right to len?
-* Maybe it will be easer for model to predict angle/length bbox adjustments instead of dx/dy adjustments?
+* Maybe it will be easer for the model to predict angle/length bbox adjustments instead of dx/dy adjustments?
 * Maybe we'll be fine with single-stage detectors since we only care about catching humans (and, besides that, of humans of a quite large size, i.e. those, who are close to a camera)
 * Points which lie on borders between two different parts are hard to distinguish for the model. And not because our model is stupid, but because our parametrization is stupid. And there are quite a lot of such borders. Use different parametrization.
 * It feels that we can interpolate DensePose targets for additional supervision.

@@ -14,7 +14,7 @@ def construct_transforms(train:bool=True) -> Callable:
             ConvertBatchTarget(),
             AlbuTransformWrapper(
                 A.Compose([
-                    HorizontalFlipWithDP(p=0.5)
+                    HorizontalFlipWithDP(p=0.)
                 ], bbox_params={
                     'format': 'pascal_voc',
                     'min_area': 0.,
