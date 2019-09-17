@@ -112,19 +112,16 @@ class DensePoseRCNNTrainer(BaseTrainer):
                 # Run without synchronization
                 with self.model.no_sync():
                     total_loss.backward()
-
-                # Recompute total_loss for logging purposes
-                # TODO: does not this sync? Maybe we should log values without syncing?
-                losses = reduce_loss_dict(losses)
-                total_loss = sum(c * l for c, l in zip(coefs, losses.values()))
             else:
                 total_loss.backward()
 
-            if is_main_process():
-                for loss_name in losses:
-                    self.write_scalar(f'Train/{loss_name}', losses[loss_name].item(), self.num_iters_done)
+        # TODO: Currently we write loss only for main process. Maybe we should sync and log normally?
+        # losses = reduce_loss_dict(losses)
+        # total_loss = sum(c * l for c, l in zip(coefs, losses.values()))
+        for loss_name in losses:
+            self.write_scalar(f'Train/{loss_name}', losses[loss_name].item(), self.num_iters_done)
 
-                self.write_scalar(f'Train/total_loss', total_loss.item(), self.num_iters_done)
+        self.write_scalar(f'Train/total_loss', total_loss.item(), self.num_iters_done)
 
     def write_scalar(self, *args):
         if not is_main_process(): return
