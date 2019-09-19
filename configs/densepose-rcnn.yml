@@ -35,7 +35,7 @@ hp:
     dp_v_loss: 0.1
     dp_mask_loss: 2.0
 
-  grad_accum: 2
+  grad_accum: 1
   batch_size: 2
 
   grad_clip_norm_value: 100
@@ -46,16 +46,16 @@ hp:
   optim:
     type: 'sgd'
     kwargs:
-      lr: 0.001 # LR of 0.001 was chosen for 4 GPUs. Adjust accordingly
+      lr: 0.002 # LR of 0.001 was chosen for 8 GPUs. Adjust accordingly
       weight_decay: 0.0001
       momentum: 0.9
     lr_scheduler:
       type: 'multi_step_lr'
       kwargs:
-        milestones: [120000, 160000]
+        milestones: [150000, 200000]
         gamma: 0.1
     warmup_scheduler:
-      lr: 0.001 # LR of 0.001 was chosen for 4 GPUs. Adjust accordingly
+      lr: 0.002 # LR of 0.001 was chosen for 8 GPUs. Adjust accordingly
       num_warmup_iters: 1000
       warmup_factor: 0.1
 #  optim:
