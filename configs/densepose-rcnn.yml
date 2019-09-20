@@ -55,7 +55,7 @@ hp:
         milestones: [150000, 200000]
         gamma: 0.1
     warmup_scheduler:
-      lr: 0.002 # LR of 0.001 was chosen for 8 GPUs. Adjust accordingly
+      lr: 0.002 # LR was chosen for 8 GPUs. Adjust accordingly
       num_warmup_iters: 1000
       warmup_factor: 0.1
 #  optim:

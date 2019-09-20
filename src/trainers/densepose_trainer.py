@@ -1,5 +1,6 @@
 import os
 import json
+from typing import Dict
 
 import torch
 import torch.nn as nn
@@ -86,17 +87,17 @@ class DensePoseRCNNTrainer(BaseTrainer):
         losses = self.model(images, targets)
         coefs = [self.config.hp.get(f'loss_coefs.{loss_name}', 1) for loss_name in losses]
         total_loss = sum(c * l for c, l in zip(coefs, losses.values()))
+        total_loss /= self.config.hp.get('grad_accum', 1) # Averaging across accumulations
 
         if (self.num_iters_done + 1) % self.config.hp.get('grad_accum', 1) == 0:
             # Run with synchronization (performed automatically during backward)
-            total_loss_accumulated = total_loss / self.config.hp.get('grad_accum', 1)
-            total_loss_accumulated.backward()
+            total_loss.backward()
 
             grad_norm = clip_grad_norm_(self.model.parameters(), self.config.hp.grad_clip_norm_value)
 
             self.optim.step()
 
-            if self.is_warmup_enabled and self.num_iters_done <= self.warmup_scheduler.num_warmup_iters:
+            if self.is_warmup_enabled and self.warmup_scheduler.last_epoch < self.warmup_scheduler.num_warmup_iters:
                 self.warmup_scheduler.step()
             elif not self.lr_scheduler is None:
                 self.lr_scheduler.step()
@@ -115,6 +116,9 @@ class DensePoseRCNNTrainer(BaseTrainer):
             else:
                 total_loss.backward()
 
+        self.log_losses(losses, total_loss)
+
+    def log_losses(self, losses:Dict[str, torch.Tensor], total_loss:torch.Tensor):
         # TODO: Currently we write loss only for main process. Maybe we should sync and log normally?
         # losses = reduce_loss_dict(losses)
         # total_loss = sum(c * l for c, l in zip(coefs, losses.values()))

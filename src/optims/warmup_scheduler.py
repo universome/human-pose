@@ -22,4 +22,5 @@ class WarmupScheduler(_LRScheduler):
     def _check_state(self):
         assert self.last_epoch >= 0
         assert self.last_epoch <= self.num_warmup_iters, \
-            'You are trying to use warmup after warmup period'
+            f'You are trying to use warmup after warmup period:' \
+            f'Last epoch: {self.last_epoch}. Num warmup iters: {self.num_warmup_iters}'
