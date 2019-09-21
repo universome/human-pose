@@ -7,6 +7,7 @@ import torch.nn as nn
 import numpy as np
 from firelab import BaseTrainer
 from torch.nn.utils.clip_grad import clip_grad_norm_
+from torchvision.models import mobilenet_v2
 from tqdm import tqdm
 
 from src.models.detection.backbone_utils import resnet_fpn_backbone
@@ -31,8 +32,14 @@ class DensePoseRCNNTrainer(BaseTrainer):
         self.is_distributed = self.config.get('is_distributed', False)
 
     def init_models(self):
-        # backbone = mobilenet_v2(pretrained=True)
-        backbone = resnet_fpn_backbone('resnet50', pretrained=True)
+        if self.config.hp.model_config.get('backbone', 'resnet50') == 'resnet50':
+            backbone = resnet_fpn_backbone('resnet50', pretrained=True)
+        elif self.config.hp.model_config.backbone == 'mobilenetv2':
+            backbone = mobilenet_v2(pretrained=True).features
+            backbone.out_channels = 1280
+        else:
+            raise NotImplementedError(f'Unknown backbone: {self.config.hp.model_config.backbone}')
+
         self.model = DensePoseRCNN(backbone, num_maskrcnn_classes=2, box_detections_per_img=20)
 
         if self.config.has('load_checkpoint.model'):
