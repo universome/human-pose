@@ -34,9 +34,11 @@ class DensePoseRCNNTrainer(BaseTrainer):
     def init_models(self):
         if self.config.hp.model_config.get('backbone', 'resnet50') == 'resnet50':
             backbone = resnet_fpn_backbone('resnet50', pretrained=True)
+            self.logger.info('Running with Resnet50 backbone')
         elif self.config.hp.model_config.backbone == 'mobilenetv2':
             backbone = mobilenet_v2(pretrained=True).features
             backbone.out_channels = 1280
+            self.logger.info('Running with MobileNetV2 backbone')
         else:
             raise NotImplementedError(f'Unknown backbone: {self.config.hp.model_config.backbone}')
 
