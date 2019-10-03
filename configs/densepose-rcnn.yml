@@ -1,54 +1,65 @@
 random_seed: 42
 data:
-  coco_dir: "data/coco"
-  annotations_dir: "data/densepose"
+  images_dir:
+    train: "data/coco/train2014"
+    val: "data/coco/val2014"
+#    val: "data/coco/train2014"
+  annotations:
+    train: "data/densepose/densepose_coco_2014_train.json"
+    val: "data/densepose/densepose_coco_2014_minival.json"
+#    val: "data/densepose/densepose_coco_2014_train.json"
+#    train: "data/densepose/densepose_coco_2014_small.json"
+#    val: "data/densepose/densepose_coco_2014_small.json"
   eval_data: "data/densepose/eval_data"
 modules:
   models: ["model"]
   optims: ["optim"]
 val_freq_epochs: 10
-#val_freq_iters: 10
 val_iou_types: ['uv', 'segm', 'bbox']
 checkpoint:
-  freq_epochs: 5
+  freq_epochs: 10
 
-max_num_epochs: 300
+max_num_epochs: 1000
 is_distributed: true
 distributed_backend: "gloo"
 distributed_timeout: 7200 # Increase timeout, cause validation takes a lot
-load_checkpoint:
-  model: "experiments/experiment-00026/checkpoints/model-82625.pt"
-  optim: "experiments/experiment-00026/checkpoints/optim-82625.pt"
+should_ignore_oom_batches: true
+#load_checkpoint:
+#  model: "experiments/experiment-00086/checkpoints/model-165250.pt"
+#  optim: "experiments/experiment-00085/checkpoints/optim-33050.pt"
 
 hp:
-  dp_head_output_size: 50
+  grad_accum: 1
+  batch_size: 3
+  grad_clip_norm_value: 100
+
+  model_config:
+    backbone: 'mobilenetv2'
+    dp_head_output_size: 50
+    min_size: 800
+    max_size: 1333
+
   loss_coefs:
     dp_cls_loss: 0.3
     dp_u_loss: 0.1
     dp_v_loss: 0.1
     dp_mask_loss: 2.0
 
-  grad_accum: 3
-  batch_size: 2
-
-  grad_clip_norm_value: 5
-  model_config:
-    min_size: 800
-    max_size: 1333
-
   optim:
     type: 'sgd'
     kwargs:
-      lr: 0.001 # LR of 0.001 was chosen for 4 GPUs. Adjust accordingly
+      lr: 0.001 # LR of 0.001 was chosen for 8 GPUs. Adjust accordingly
       weight_decay: 0.0001
       momentum: 0.9
     lr_scheduler:
       type: 'multi_step_lr'
       kwargs:
-        milestones: [120000, 160000]
+        milestones: [150000, 200000]
         gamma: 0.1
     warmup_scheduler:
-      lr: 0.001 # LR of 0.001 was chosen for 4 GPUs. Adjust accordingly
+      lr: 0.001 # LR was chosen for 8 GPUs. Adjust accordingly
       num_warmup_iters: 1000
       warmup_factor: 0.1
-
+#  optim:
+#    type: 'adam'
+#    kwargs: {'lr': 0.0001}

@@ -1,11 +1,13 @@
 import os
 import json
+from typing import Dict
 
 import torch
 import torch.nn as nn
 import numpy as np
 from firelab import BaseTrainer
 from torch.nn.utils.clip_grad import clip_grad_norm_
+from torchvision.models import mobilenet_v2
 from tqdm import tqdm
 
 from src.models.detection.backbone_utils import resnet_fpn_backbone
@@ -30,8 +32,16 @@ class DensePoseRCNNTrainer(BaseTrainer):
         self.is_distributed = self.config.get('is_distributed', False)
 
     def init_models(self):
-        # backbone = mobilenet_v2(pretrained=True)
-        backbone = resnet_fpn_backbone('resnet50', pretrained=True)
+        if self.config.hp.model_config.get('backbone', 'resnet50') == 'resnet50':
+            backbone = resnet_fpn_backbone('resnet50', pretrained=True)
+            self.logger.info('Running with Resnet50 backbone')
+        elif self.config.hp.model_config.backbone == 'mobilenetv2':
+            backbone = mobilenet_v2(pretrained=True).features
+            backbone.out_channels = 1280
+            self.logger.info('Running with MobileNetV2 backbone')
+        else:
+            raise NotImplementedError(f'Unknown backbone: {self.config.hp.model_config.backbone}')
+
         self.model = DensePoseRCNN(backbone, num_maskrcnn_classes=2, box_detections_per_img=20)
 
         if self.config.has('load_checkpoint.model'):
@@ -45,8 +55,10 @@ class DensePoseRCNNTrainer(BaseTrainer):
                 self.model, device_ids=self.gpus, output_device=self.gpus[0])
 
     def init_dataloaders(self):
-        self.train_dataloader = construct_dataloader(self.config, True, self.is_distributed, True)
-        self.val_dataloader = construct_dataloader(self.config, False, self.is_distributed, False)
+        self.train_dataloader = construct_dataloader(
+            self.config, is_train=True, is_distributed=self.is_distributed, shuffle=False)
+        self.val_dataloader = construct_dataloader(
+            self.config, is_train=False, is_distributed=self.is_distributed, shuffle=False)
 
     def init_optimizers(self):
         if self.config.hp.optim.type == 'adam':
@@ -56,7 +68,9 @@ class DensePoseRCNNTrainer(BaseTrainer):
         else:
             raise NotImplementedError(f'Unknown optimizer: {self.config.hp.optim.type }')
 
-        if self.config.hp.optim.get('lr_scheduler.type') == 'cyclic_lr':
+        if not self.config.hp.optim.has('lr_scheduler'):
+            self.lr_scheduler = None
+        elif self.config.hp.optim.get('lr_scheduler.type') == 'cyclic_lr':
             self.lr_scheduler = torch.optim.lr_scheduler.CyclicLR(
                 self.optim, **self.config.hp.optim.lr_scheduler.kwargs.to_dict())
         elif self.config.hp.optim.get('lr_scheduler.type') == 'multi_step_lr':
@@ -65,7 +79,7 @@ class DensePoseRCNNTrainer(BaseTrainer):
         else:
             raise NotImplementedError(f'Unknown scheduler: {self.config.hp.optim.get("lr_scheduler.type")}')
 
-        if self.config.hp.optim.has('warmup_scheduler'):
+        if self.config.has('hp.optim.warmup_scheduler'):
             self.is_warmup_enabled = True
             self.warmup_scheduler = WarmupScheduler(self.optim, **self.config.hp.optim.warmup_scheduler.to_dict())
         else:
@@ -82,42 +96,45 @@ class DensePoseRCNNTrainer(BaseTrainer):
         losses = self.model(images, targets)
         coefs = [self.config.hp.get(f'loss_coefs.{loss_name}', 1) for loss_name in losses]
         total_loss = sum(c * l for c, l in zip(coefs, losses.values()))
+        total_loss /= self.config.hp.get('grad_accum', 1) # Averaging across accumulations
 
         if (self.num_iters_done + 1) % self.config.hp.get('grad_accum', 1) == 0:
             # Run with synchronization (performed automatically during backward)
-            total_loss_accumulated = total_loss / self.config.hp.get('grad_accum', 1)
-            total_loss_accumulated.backward()
+            total_loss.backward()
 
             grad_norm = clip_grad_norm_(self.model.parameters(), self.config.hp.grad_clip_norm_value)
 
             self.optim.step()
 
-            if self.is_warmup_enabled and self.num_iters_done <= self.warmup_scheduler.num_warmup_iters:
+            if self.is_warmup_enabled and self.warmup_scheduler.last_epoch < self.warmup_scheduler.num_warmup_iters:
                 self.warmup_scheduler.step()
-            else:
+            elif not self.lr_scheduler is None:
                 self.lr_scheduler.step()
+            else:
+                pass
 
             self.optim.zero_grad()
 
             self.write_scalar(f'Stats/Grad_norm', grad_norm, self.num_iters_done)
             self.write_scalar(f'Stats/LR', self.optim.param_groups[0]['lr'], self.num_iters_done)
         else:
-            # Run without synchronization
             if self.is_distributed:
+                # Run without synchronization
                 with self.model.no_sync():
                     total_loss.backward()
-
-                # TODO: does not this sync? Is it possible to log sensible values without syncing then?
-                losses = reduce_loss_dict(losses)
-                total_loss = sum(c * l for c, l in zip(coefs, losses.values()))
             else:
                 total_loss.backward()
 
-            if is_main_process():
-                for loss_name in losses:
-                    self.write_scalar(f'Train/{loss_name}', losses[loss_name].item(), self.num_iters_done)
+        self.log_losses(losses, total_loss)
 
-                self.write_scalar(f'Train/total_loss', total_loss.item(), self.num_iters_done)
+    def log_losses(self, losses:Dict[str, torch.Tensor], total_loss:torch.Tensor):
+        # TODO: Currently we write loss only for main process. Maybe we should sync and log normally?
+        # losses = reduce_loss_dict(losses)
+        # total_loss = sum(c * l for c, l in zip(coefs, losses.values()))
+        for loss_name in losses:
+            self.write_scalar(f'Train/{loss_name}', losses[loss_name].item(), self.num_iters_done)
+
+        self.write_scalar(f'Train/total_loss', total_loss.item(), self.num_iters_done)
 
     def write_scalar(self, *args):
         if not is_main_process(): return
